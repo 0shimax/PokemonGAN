@@ -1,10 +1,11 @@
 import tensorflow as tf
-import ops
 
 
 class BiRNN(tf.keras.Model):
     def __init__(self, output_size, embedding_size, n_hidden,
                  stddev=0.02, bias_start=0.0, dropout_rate=0.5, reuse=None):
+        super().__init__()
+
         self.wrod_embeddings = tf.keras.layers.Embedding(150, embedding_size)
         self.lstm_fw = tf.keras.layers.LSTM(n_hidden)
         self.lstm_bw = tf.keras.layers.LSTM(n_hidden, go_backwards=True)
@@ -83,7 +84,7 @@ class Generator(tf.keras.Model):
         self.options = options
 
         s = options['image_size']
-        s2, s4, s8, self.s16 = int(s/2), int(s/4), int(s/8), int(s/16)
+        s2, s4, s8, s16 = int(s/2), int(s/4), int(s/8), int(s/16)
 
         self.bi_rnn = BiRNN(options['t_dim'], options['word_dim'],
                             options['rnn_hidden'])
@@ -129,6 +130,8 @@ class Generator(tf.keras.Model):
 #    https://github.com/carpedm20/DCGAN-tensorflow/blob/master/model.py
 class Discriminator(tf.keras.Model):
     def __init__(self, options, reuse=False):
+        super().__init__()
+
         self.d_h0_conv = tf.keras.layers.Conv2D(options['df_dim'],
             kernel_size=5, strides=2, activation=tf.nn.leaky_relu)
         self.d_h1_conv = tf.keras.layers.Conv2D(options['df_dim']*2,
@@ -137,7 +140,7 @@ class Discriminator(tf.keras.Model):
             kernel_size=5, strides=2)
         self.d_h3_conv = tf.keras.layers.Conv2D(options['df_dim']*8,
             kernel_size=5, strides=2)
-        self.d_h3_conv_new = tf.keras.layers.Conv2D(self.options['df_dim']*8,
+        self.d_h3_conv_new = tf.keras.layers.Conv2D(options['df_dim']*8,
             kernel_size=1, strides=1)
 
         self.bi_rnn = BiRNN(options['t_dim'], options['word_dim'],

@@ -21,9 +21,10 @@ def main(args):
     print('Using device %s, and data format %s.' % (device, data_format))
 
     # Load the datasets
-    data = read_data_sets('./data', 'pokemon_images', 'pokemon.csv')
+    data = read_data_sets('./data', 'pokemon_images',
+                          'pokemon.csv', args.word_dim)
     dataset = (
-        tf.data.Dataset.from_tensor_slices(data.train.images).shuffle(60000)
+        tf.data.Dataset.from_tensor_slices(data.train).shuffle(60000)
         .batch(args.batch_size))
 
     model_options = {
@@ -97,7 +98,7 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
 
     total_generator_loss = 0.0
     total_discriminator_loss = 0.0
-    for (batch_index, images) in enumerate(tfe.Iterator(dataset)):
+    for batch_index, images in enumerate(tfe.Iterator(dataset)):
         with tf.device('/cpu:0'):
             tf.assign_add(step_counter, 1)
 

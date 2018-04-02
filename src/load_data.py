@@ -1,15 +1,16 @@
-import gzip
+import tensorflow as tf
 from os import listdir
 from os.path import isfile, join
 from pathlib import Path
 import pandas as pd
 from skimage import io
+from skimage.color import rgba2rgb
 from sklearn.model_selection import train_test_split
 import numpy
 numpy.random.seed(555)
 
 
-class DataSet(object):
+class DataSet(tf.data.Dataset):
     def __init__(self, images, captions):
         """Construct a DataSet.
            one_hot arg is used only if fake_data is true.
@@ -22,10 +23,7 @@ class DataSet(object):
 
         # Convert shape from [num examples, rows, columns, depth]
         # to [num examples, rows*columns] (assuming depth == 1)
-        assert images.shape[3] == 1
-        images = images.reshape(images.shape[0],
-                                images.shape[1] * images.shape[2])
-        # Convert from [0, 255] -> [0.0, 1.0].
+        assert images.shape[3] == 3
         images = images.astype(numpy.float32)
         images = numpy.multiply(images, 1.0 / 255.0)
 
@@ -78,6 +76,7 @@ def read_data_sets(data_root, image_file_dir, caption_file_name, caption_dim):
         pass
 
     def padding_ignore_tag(l_caption):
+        l_caption = eval(l_caption)
         caption_len = len(l_caption)
         if caption_len < caption_dim:
             n_ignore_tag = caption_dim - caption_len
@@ -95,11 +94,13 @@ def read_data_sets(data_root, image_file_dir, caption_file_name, caption_dim):
     caption_file_path = Path(data_root, caption_file_name)
     df_captions = pd.read_csv(caption_file_path)
     captions = df_captions.abilities.apply(padding_ignore_tag).values
-    print(captions)
 
-    images = \
-        [io.imread(Path(image_dir_path, image_name))
-            for image_name in image_file_names]
+    images = [rgba2rgb(io.imread(Path(image_dir_path, image_name)))
+              for image_name in image_file_names]
+    images = numpy.array(images, dtype=numpy.float32)
+
+    n_data = len(images)
+    captions = captions[:n_data]
 
     train_images, test_images, train_captions, test_captions = \
         train_test_split(images, captions,
