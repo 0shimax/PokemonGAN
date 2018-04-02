@@ -3,6 +3,8 @@ from os import listdir
 from os.path import isfile, join
 from pathlib import Path
 import pandas as pd
+from skimage import io
+from sklearn.model_selection import train_test_split
 import numpy
 numpy.random.seed(555)
 
@@ -71,9 +73,19 @@ class DataSet(object):
             self._captions[start:end],  z_noise
 
 
-def read_data_sets(data_root, image_file_dir, caption_file_name):
+def read_data_sets(data_root, image_file_dir, caption_file_name, caption_dim):
     class DataSets(object):
         pass
+
+    def padding_ignore_tag(l_caption):
+        caption_len = len(l_caption)
+        if caption_len < caption_dim:
+            n_ignore_tag = caption_dim - caption_len
+            return l_caption + ['<ignore>']*n_ignore_tag
+        elif caption_len > caption_dim:
+            return l_caption[:caption_dim]
+        return l_caption
+
     data_sets = DataSets()
     image_dir_path = Path(data_root, image_file_dir)
 
@@ -82,10 +94,17 @@ def read_data_sets(data_root, image_file_dir, caption_file_name):
 
     caption_file_path = Path(data_root, caption_file_name)
     df_captions = pd.read_csv(caption_file_path)
-    captions = df_captions.abilities.values
+    captions = df_captions.abilities.apply(padding_ignore_tag).values
     print(captions)
 
-    # data_sets.train = DataSet(train_images, train_labels)
-    # data_sets.test = DataSet(test_images, test_labels)
+    images = \
+        [io.imread(Path(image_dir_path, image_name))
+            for image_name in image_file_names]
+
+    train_images, test_images, train_captions, test_captions = \
+        train_test_split(images, captions,
+                         random_state=55, shuffle=False, test_size=.15)
+    data_sets.train = DataSet(train_images, train_captions)
+    data_sets.test = DataSet(test_images, test_captions)
 
     return data_sets
