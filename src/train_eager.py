@@ -22,10 +22,11 @@ def main(args):
 
     # Load the datasets
     data = read_data_sets('./data', 'pokemon_images',
-                          'pokemon.csv', args.word_dim)
-    dataset = (
-        tf.data.Dataset.from_tensor_slices(data.train).shuffle(60000)
-        .batch(args.batch_size))
+                          'pokemon.csv', args.word_dim, args.batch_size)
+
+    dataset = data.train
+    # real_images, wrong_images, captions, z_noise = \
+    #     get_training_batch(data.train, 64, args.noise)
 
     model_options = {
         'rnn_hidden': args.rnn_hidden,
@@ -69,9 +70,11 @@ def train(args, model_objects, device, dataset):
 
             start = time.time()
             with summary_writer.as_default():
-                train_one_epoch(dataset=dataset,
-                                log_interval=args.log_interval,
-                                noise_dim=args.noise, **model_objects)
+                train_one_epoch(**model_objects,
+                dataset=dataset,
+                log_interval=args.log_interval,
+                noise_dim=args.noise)
+
             end = time.time()
             checkpoint.save(checkpoint_prefix)
             print('\nTrain time for epoch #%d (step %d): %f' %
@@ -81,8 +84,8 @@ def train(args, model_objects, device, dataset):
 
 
 def train_one_epoch(generator, discriminator, generator_optimizer,
-                    discriminator_optimizer, dataset, step_counter,
-                    log_interval, noise_dim):
+                    discriminator_optimizer, step_counter, dataset=None,
+                    log_interval=None, noise_dim=None):
     """Trains `generator` and `discriminator` models on `dataset`.
     Args:
         generator: Generator model.
@@ -98,13 +101,16 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
 
     total_generator_loss = 0.0
     total_discriminator_loss = 0.0
-    for batch_index, images in enumerate(tfe.Iterator(dataset)):
+    batch_index = 0
+    while not dataset.end_batch:
+    # for batch_index, images in enumerate(tfe.Iterator(dataset)):
+        real_images, wrong_images, captions = dataset.next_batch()
         with tf.device('/cpu:0'):
             tf.assign_add(step_counter, 1)
 
         with tf.contrib.summary.record_summaries_every_n_global_steps(
             args.log_interval, global_step=step_counter):
-            current_batch_size = images.shape[0]
+            current_batch_size = real_images.shape[0]
             noise = tf.random_uniform(
                 shape=[current_batch_size, noise_dim],
                 minval=-1.,
@@ -112,20 +118,36 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
                 seed=batch_index)
 
             with tfe.GradientTape(persistent=True) as g:
-                generated_images = generator(noise)
+                generated_images = generator(noise, captions)
                 tf.contrib.summary.image(
                     'generated_images',
                     tf.reshape(generated_images, [-1, 28, 28, 1]),
                     max_images=10)
 
-                discriminator_gen_outputs = discriminator(generated_images)
-                discriminator_real_outputs = discriminator(images)
+                discriminator_gen_outputs, discriminator_gen_outputs_logit  = \
+                    discriminator(real_images, captions)
+                discriminator_real_outputs, discriminator_real_outputs_logit = \
+                    discriminator(wrong_images, captions)
+                discriminator_fake_outputs, discriminator_fake_outputs_logit = \
+                    discriminator(generated_images, captions)
+
                 discriminator_loss_val = \
                     discriminator_loss(discriminator_real_outputs,
                                        discriminator_gen_outputs)
+
+                discriminator_loss_val = \
+                    discriminator_loss(discriminator_gen_outputs_logit,
+                                       discriminator_gen_outputs,
+                                       discriminator_real_outputs,
+                                       discriminator_real_outputs_logit,
+                                       discriminator_fake_outputs_logit,
+                                       discriminator_fake_outputs)
                 total_discriminator_loss += discriminator_loss_val
 
-                generator_loss_val = generator_loss(discriminator_gen_outputs)
+                generator_loss_val = generator_loss(
+                    discriminator_fake_outputs,
+                    discriminator_fake_outputs_logit)
+
                 total_generator_loss += generator_loss_val
 
             generator_grad = g.gradient(generator_loss_val, generator.variables)
@@ -143,6 +165,34 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
                       'Average Discriminator Loss: %.6f' %
                       (batch_index, total_generator_loss/batch_index,
                        total_discriminator_loss/batch_index))
+        batch_index += 1
+
+
+def discriminator_loss(disc_real_image_logits, disc_real_image_prob,
+                       disc_wrong_image_logits, disc_wrong_image_prob,
+                       disc_fake_image_logits, disc_fake_image_prob):
+    d_loss1 = tf.reduce_mean(
+        tf.nn.sigmoid_cross_entropy_with_logits(
+            logits=disc_real_image_logits,
+            labels=tf.ones_like(disc_real_image_prob)))
+    d_loss2 = tf.reduce_mean(
+        tf.nn.sigmoid_cross_entropy_with_logits(
+            logits=disc_wrong_image_logits,
+            labels=tf.zeros_like(disc_wrong_image_prob)))
+    d_loss3 = tf.reduce_mean(
+        tf.nn.sigmoid_cross_entropy_with_logits(
+            logits=disc_fake_image_logits,
+            labels=tf.zeros_like(disc_fake_image_prob)))
+    d_loss = d_loss1 + d_loss2 + d_loss3
+    return d_loss
+
+
+def generator_loss(disc_fake_image_logits, disc_fake_image_prob):
+    g_loss = tf.reduce_mean(
+        tf.nn.sigmoid_cross_entropy_with_logits(
+            logits=disc_fake_image_logits,
+            labels=tf.ones_like(disc_fake_image_prob)))
+    return g_loss
 
 
 if __name__ == '__main__':

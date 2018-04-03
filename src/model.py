@@ -17,7 +17,7 @@ class BiRNN(tf.keras.Model):
         # https://github.com/keras-team/keras/issues/2838
         rnn_fwd1 = self.lstm_fw(input_)
         rnn_fwd1 = self.fw_dropout(rnn_fwd1)
-        rnn_bwd1 = self.self.lstm_fw(rnn_fwd1)
+        rnn_bwd1 = self.lstm_fw(rnn_fwd1)
         rnn_bwd1 = self.bw_dropout(rnn_bwd1)
         rnn_bidir1 = tf.keras.layers.merge([rnn_fwd1, rnn_bwd1], mode='concat')
         return rnn_bidir1
@@ -104,7 +104,7 @@ class Generator(tf.keras.Model):
         self.g_bn2 = tf.keras.layers.BatchNormalization()
         self.g_bn3 = tf.keras.layers.BatchNormalization()
 
-    def call(self, t_z, t_text_embedding):
+    def __call__(self, t_z, t_text_embedding):
         reduced_text_embedding = self.bi_rnn(t_text_embedding)
         z_concat = tf.concat([t_z, reduced_text_embedding], 1)
 
@@ -129,7 +129,7 @@ class Generator(tf.keras.Model):
 # DISCRIMINATOR IMPLEMENTATION based on :
 #    https://github.com/carpedm20/DCGAN-tensorflow/blob/master/model.py
 class Discriminator(tf.keras.Model):
-    def __init__(self, options, reuse=False):
+    def __init__(self, options):
         super().__init__()
 
         self.d_h0_conv = tf.keras.layers.Conv2D(options['df_dim'],
@@ -152,7 +152,7 @@ class Discriminator(tf.keras.Model):
         self.d_bn3 = tf.keras.layers.BatchNormalization()
         self.d_bn4 = tf.keras.layers.BatchNormalization()
 
-    def call(self, image, t_text_embedding):
+    def __call__(self, image, t_text_embedding):
         h0 = self.d_h0_conv(image)  # 32
         h1 = tf.nn.leaky_relu(self.d_bn1(self.d_h1_conv(h0)))  # 16
         h2 = tf.nn.leaky_relu(self.d_bn2(self.d_h2_conv(h1)))  # 8

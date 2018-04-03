@@ -3,18 +3,21 @@ from os import listdir
 from os.path import isfile, join
 from pathlib import Path
 import pandas as pd
+from skimage.transform import resize
 from skimage import io
 from skimage.color import rgba2rgb
 from sklearn.model_selection import train_test_split
+from gensim.corpora import Dictionary
 import numpy
 numpy.random.seed(555)
 
 
 class DataSet(tf.data.Dataset):
-    def __init__(self, images, captions):
+    def __init__(self, images, captions, batch_size):
         """Construct a DataSet.
            one_hot arg is used only if fake_data is true.
         """
+        super().__init__()
 
         assert images.shape[0] == captions.shape[0], (
             'images.shape: %s labels.shape: %s' % (images.shape,
@@ -31,6 +34,8 @@ class DataSet(tf.data.Dataset):
         self._captions = captions
         self._epochs_completed = 0
         self._index_in_epoch = 0
+        self.batch_size = batch_size
+        self.end_batch = False
 
     @property
     def images(self):
@@ -44,10 +49,13 @@ class DataSet(tf.data.Dataset):
     def num_examples(self):
         return self._num_examples
 
-    def next_batch(self, batch_size, z_dim):
+    def next_batch(self):
         """Return the next `batch_size` examples from this data set."""
+        if self.end_batch:
+            self.end_batch = False
+
         start = self._index_in_epoch
-        self._index_in_epoch += batch_size
+        self._index_in_epoch += self.batch_size
         if self._index_in_epoch > self._num_examples:
             # Finished epoch
             self._epochs_completed += 1
@@ -58,20 +66,20 @@ class DataSet(tf.data.Dataset):
             # Start next epoch
             start = 0
             self._index_in_epoch = batch_size
+            self.end_batch = True
             assert batch_size <= self._num_examples
         end = self._index_in_epoch
-
-        diff = end - start
-        z_noise = numpy.random.uniform(-1, 1, [batch_size, z_dim])[:diff]
 
         wrong_perm = numpy.random.permutation(self._num_examples)
         numpy.random.shuffle(wrong_perm)
         wrong_image_idx = wrong_perm[start:end]
-        return self._images[start:end], self._images[wrong_image_idx], \
-            self._captions[start:end],  z_noise
+        return tf.convert_to_tensor(self._images[start:end]), \
+               tf.convert_to_tensor(self._images[wrong_image_idx]), \
+               tf.convert_to_tensor(self._captions[start:end])
 
 
-def read_data_sets(data_root, image_file_dir, caption_file_name, caption_dim):
+def read_data_sets(data_root, image_file_dir, caption_file_name,
+                   caption_dim, batch_size):
     class DataSets(object):
         pass
 
@@ -95,17 +103,30 @@ def read_data_sets(data_root, image_file_dir, caption_file_name, caption_dim):
     df_captions = pd.read_csv(caption_file_path)
     captions = df_captions.abilities.apply(padding_ignore_tag).values
 
-    images = [rgba2rgb(io.imread(Path(image_dir_path, image_name)))
+    images = [resize(rgba2rgb(io.imread(Path(image_dir_path, image_name))),
+                  (64,64,3,))
               for image_name in image_file_names]
     images = numpy.array(images, dtype=numpy.float32)
 
     n_data = len(images)
     captions = captions[:n_data]
+    captions = caption_to_one_hot(captions)
 
     train_images, test_images, train_captions, test_captions = \
         train_test_split(images, captions,
                          random_state=55, shuffle=False, test_size=.15)
-    data_sets.train = DataSet(train_images, train_captions)
-    data_sets.test = DataSet(test_images, test_captions)
+    data_sets.train = DataSet(train_images, train_captions, batch_size)
+    data_sets.test = DataSet(test_images, test_captions, batch_size)
 
     return data_sets
+
+
+def caption_to_one_hot(captions):
+    vocab = Dictionary(captions)
+    return numpy.array([[vocab.token2id[word] \
+        for word in words] for words in captions])
+
+# def get_training_batch(data_set, image_size, z_dim):
+#     real_images, wrong_images, captions = data_set.next_batch()
+# 	z_noise = np.random.uniform(-1, 1, [data_set.batch_size, z_dim])
+# 	return real_images, wrong_images, captions, z_noise
