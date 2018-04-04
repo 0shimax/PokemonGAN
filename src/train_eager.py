@@ -105,6 +105,10 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
     while not dataset.end_batch:
     # for batch_index, images in enumerate(tfe.Iterator(dataset)):
         real_images, wrong_images, captions = dataset.next_batch()
+        print("real_images", real_images.shape)
+        print("wrong_images", wrong_images.shape)
+        print("captions", captions.shape)
+
         with tf.device('/cpu:0'):
             tf.assign_add(step_counter, 1)
 
@@ -118,10 +122,11 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
                 seed=batch_index)
 
             with tfe.GradientTape(persistent=True) as g:
+                print("captions:", captions.shape)
                 generated_images = generator(noise, captions)
                 tf.contrib.summary.image(
                     'generated_images',
-                    tf.reshape(generated_images, [-1, 28, 28, 1]),
+                    tf.reshape(generated_images, [-1, 64, 64, 3]),
                     max_images=10)
 
                 discriminator_gen_outputs, discriminator_gen_outputs_logit  = \
@@ -132,14 +137,10 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
                     discriminator(generated_images, captions)
 
                 discriminator_loss_val = \
-                    discriminator_loss(discriminator_real_outputs,
-                                       discriminator_gen_outputs)
-
-                discriminator_loss_val = \
                     discriminator_loss(discriminator_gen_outputs_logit,
                                        discriminator_gen_outputs,
-                                       discriminator_real_outputs,
                                        discriminator_real_outputs_logit,
+                                       discriminator_real_outputs,
                                        discriminator_fake_outputs_logit,
                                        discriminator_fake_outputs)
                 total_discriminator_loss += discriminator_loss_val
@@ -203,7 +204,7 @@ if __name__ == '__main__':
     parser.add_argument('--z_dim', type=int, default=100,
                         help='Noise dimension')
 
-    parser.add_argument('--word_dim', type=int, default=256,
+    parser.add_argument('--word_dim', type=int, default=20,
                         help='Word embedding matrix dimension')
 
     parser.add_argument('--t_dim', type=int, default=256,
