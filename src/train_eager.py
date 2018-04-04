@@ -13,7 +13,6 @@ from load_data import read_data_sets
 
 def main(args):
     tfe.enable_eager_execution()
-    args.no_gpu = True
 
     (device, data_format) = ('/gpu:0', 'channels_first')
     if args.no_gpu or tfe.num_gpus() <= 0:
@@ -22,12 +21,11 @@ def main(args):
 
     # Load the datasets
     data = read_data_sets('./data', 'pokemon_images',
-                          'pokemon.csv', args.word_dim, args.batch_size)
+                          'pokemon.csv',
+                          args.word_dim, args.batch_size,
+                          arg.resized_image_size)
 
     dataset = data.train
-    # real_images, wrong_images, captions, z_noise = \
-    #     get_training_batch(data.train, 64, args.noise)
-
     model_options = {
         'rnn_hidden': args.rnn_hidden,
         'word_dim': args.word_dim,
@@ -73,7 +71,7 @@ def train(args, model_objects, device, dataset):
                 train_one_epoch(**model_objects,
                 dataset=dataset,
                 log_interval=args.log_interval,
-                noise_dim=args.noise)
+                noise_dim=args.noise_dim)
 
             end = time.time()
             checkpoint.save(checkpoint_prefix)
@@ -103,11 +101,7 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
     total_discriminator_loss = 0.0
     batch_index = 0
     while not dataset.end_batch:
-    # for batch_index, images in enumerate(tfe.Iterator(dataset)):
         real_images, wrong_images, captions = dataset.next_batch()
-        print("real_images", real_images.shape)
-        print("wrong_images", wrong_images.shape)
-        print("captions", captions.shape)
 
         with tf.device('/cpu:0'):
             tf.assign_add(step_counter, 1)
@@ -122,7 +116,6 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
                 seed=batch_index)
 
             with tfe.GradientTape(persistent=True) as g:
-                print("captions:", captions.shape)
                 generated_images = generator(noise, captions)
                 tf.contrib.summary.image(
                     'generated_images',
@@ -198,66 +191,52 @@ def generator_loss(disc_fake_image_logits, disc_fake_image_prob):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('--no-gpu', action='store_true',
+                        help='Use GPU')
     parser.add_argument('--rnn_hidden', type=int, default=200,
                         help='Number of nodes in the rnn hidden layer')
-
     parser.add_argument('--z_dim', type=int, default=100,
                         help='Noise dimension')
-
     parser.add_argument('--word_dim', type=int, default=20,
                         help='Word embedding matrix dimension')
-
     parser.add_argument('--t_dim', type=int, default=256,
                         help='Text feature dimension')
-
     parser.add_argument('--batch_size', type=int, default=2,
                         help='Batch Size')
-
     parser.add_argument('--image_size', type=int, default=32,
                         help='Image Size a, a x a')
-
     parser.add_argument('--gf_dim', type=int, default=64,
                         help='Number of conv in the first layer gen.')
-
     parser.add_argument('--df_dim', type=int, default=64,
                         help='Number of conv in the first layer discr.')
-
     parser.add_argument('--gfc_dim', type=int, default=1024,
                         help='Dimension of gen untis \
                               for fully connected layer 1024')
-
     parser.add_argument('--caption_vector_length', type=int, default=20,
                         help='Caption Vector Length')
-
+    parser.add_argument('--resized_image_size', type=int, default=64,
+                        help='Size of resized images')
     parser.add_argument('--data_dir', type=str, default="./data",
                         help='Data Directory')
-
     parser.add_argument('--out_dir', type=str, default="./results",
                         help='Output Directory')
-
     parser.add_argument('--checkpoint_dir', type=str, default="./results/ckpt",
                         help='Checkpoint Directory')
-
     parser.add_argument('--learning_rate', type=float, default=0.0002,
                         help='Learning Rate')
-
     parser.add_argument('--beta1', type=float, default=0.5,
                         help='Momentum for Adam Update')
-
     parser.add_argument('--epochs', type=int, default=600,
                         help='Max number of epochs')
     parser.add_argument('--log_interval', type=int, default=1000,
                         help='Log interval')
-    parser.add_argument('--noise', type=int, default=30,
+    parser.add_argument('--noise-dim', type=int, default=30,
                         help='Noise dimention')
-
     parser.add_argument('--save_every', type=int, default=30,
                         help='Save Model/Samples every x iterations \
                               over batches')
-
     parser.add_argument('--resume_model', type=str, default=None,
                         help='Pre-Trained Model Path, to resume from')
-
     parser.add_argument('--data_set', type=str, default="flowers",
                         help='Dat set: MS-COCO, flowers')
     args = parser.parse_args()
