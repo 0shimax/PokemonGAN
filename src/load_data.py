@@ -110,7 +110,7 @@ def read_data_sets(data_root, image_file_dir, caption_file_name,
 
     n_data = len(images)
     captions = captions[:n_data]
-    captions = caption_to_one_hot(captions)
+    captions, voc_size = caption_to_one_hot(captions)
 
     train_images, test_images, train_captions, test_captions = \
         train_test_split(images, captions,
@@ -118,13 +118,14 @@ def read_data_sets(data_root, image_file_dir, caption_file_name,
     data_sets.train = DataSet(train_images, train_captions, batch_size)
     data_sets.test = DataSet(test_images, test_captions, batch_size)
 
-    return data_sets
+    return data_sets, voc_size
 
 
 def caption_to_one_hot(captions):
     vocab = Dictionary(captions)
-    return numpy.array([[vocab.token2id[word] \
+    one_hot_matrix = numpy.array([[vocab.token2id[word] \
         for word in words] for words in captions])
+    return one_hot_matrix, len(vocab.keys())
 
 # def get_training_batch(data_set, image_size, z_dim):
 #     real_images, wrong_images, captions = data_set.next_batch()

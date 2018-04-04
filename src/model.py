@@ -2,17 +2,17 @@ import tensorflow as tf
 
 
 class BiRNN(tf.keras.Model):
-    def __init__(self, output_size, embedding_size, n_hidden,
+    def __init__(self, output_size, embedded_size, n_hidden, voc_size,
                  stddev=0.02, bias_start=0.0, dropout_rate=0.5, reuse=None):
         super().__init__()
 
-        self.wrod_embeddings = tf.keras.layers.Embedding(150, embedding_size)
+        self.word_embeddings = tf.keras.layers.Embedding(150, embedded_size)
         self.bidirectional = tf.keras.layers.Bidirectional(
             tf.keras.layers.LSTM(n_hidden))
         self.lin = tf.keras.layers.Dense(output_size)
 
     def call(self, input_):
-        embedded_word_output = self.wrod_embeddings(input_)
+        embedded_word_output = self.word_embeddings(input_)
         lstm_output = self.bidirectional(embedded_word_output)
         out = self.lin(lstm_output)
         return out
@@ -27,7 +27,7 @@ class Sampler(tf.keras.Model):
         """ dim 2400 -> 256 """
 
         self.bi_rnn = BiRNN(options['t_dim'], options['word_dim'],
-                            options['rnn_hidden'])
+                            options['rnn_hidden'], options['voc_size'])
 
         self.g_h0_lin = \
             tf.keras.layers.Dense(options['gf_dim']*8*s16*s16)
@@ -77,7 +77,7 @@ class Generator(tf.keras.Model):
             int(s/2), int(s/4), int(s/8), int(s/16)
 
         self.bi_rnn = BiRNN(options['t_dim'], options['word_dim'],
-                            options['rnn_hidden'])
+                            options['rnn_hidden'], options['voc_size'])
         self.g_h0_lin = tf.keras.layers.Dense(
             options['gf_dim']*8*self.s16*self.s16, activation=tf.tanh)
 
@@ -136,7 +136,7 @@ class Discriminator(tf.keras.Model):
             kernel_size=1, strides=1)
 
         self.bi_rnn = BiRNN(options['t_dim'], options['word_dim'],
-                            options['rnn_hidden'])
+                            options['rnn_hidden'], options['voc_size'])
         self.d_h3_lin = tf.keras.layers.Dense(1)
 
         self.d_bn1 = tf.keras.layers.BatchNormalization()

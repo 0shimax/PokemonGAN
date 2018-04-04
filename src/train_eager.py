@@ -20,15 +20,16 @@ def main(args):
     print('Using device %s, and data format %s.' % (device, data_format))
 
     # Load the datasets
-    data = read_data_sets('./data', 'pokemon_images',
+    data, voc_size = read_data_sets('./data', 'pokemon_images',
                           'pokemon.csv',
                           args.word_dim, args.batch_size,
-                          arg.resized_image_size)
+                          args.resized_image_size)
 
     dataset = data.train
     model_options = {
         'rnn_hidden': args.rnn_hidden,
         'word_dim': args.word_dim,
+        'voc_size': voc_size,
         'z_dim': args.z_dim,
         't_dim': args.t_dim,
         'batch_size': args.batch_size,
