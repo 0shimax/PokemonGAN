@@ -35,7 +35,7 @@ class DataSet(tf.data.Dataset):
         self._epochs_completed = 0
         self._index_in_epoch = 0
         self.batch_size = batch_size
-        self.end_batch = False
+        self.current_position = 0
 
     @property
     def images(self):
@@ -49,14 +49,25 @@ class DataSet(tf.data.Dataset):
     def num_examples(self):
         return self._num_examples
 
-    def next_batch(self):
-        """Return the next `batch_size` examples from this data set."""
-        if self.end_batch:
-            self.end_batch = False
+    def __iter__(self):
+        """Returns self."""
+        return self
 
-        start = self._index_in_epoch
-        self._index_in_epoch += self.batch_size
-        if self._index_in_epoch > self._num_examples:
+    # def next_batch(self):
+    def __next__(self):
+        """Return the next `batch_size` examples from this data set."""
+        i = self.current_position
+        i_end = i + self.batch_size
+
+        # Shuffle wrong image index
+        wrong_perm = numpy.random.permutation(self._num_examples)
+
+        if i_end > self._num_examples:
+            wrong_image_idx = wrong_perm[i:]
+            real_images = tf.convert_to_tensor(self._images[i:])
+            wrong_images = tf.convert_to_tensor(self._images[wrong_image_idx])
+            captions = tf.convert_to_tensor(self._captions[si:])
+
             # Finished epoch
             self._epochs_completed += 1
             # Shuffle the data
@@ -64,18 +75,15 @@ class DataSet(tf.data.Dataset):
             self._images = self._images[perm]
             self._captions = self._captions[perm]
             # Start next epoch
-            start = 0
-            self._index_in_epoch = batch_size
-            self.end_batch = True
-            assert batch_size <= self._num_examples
-        end = self._index_in_epoch
-
-        wrong_perm = numpy.random.permutation(self._num_examples)
-        numpy.random.shuffle(wrong_perm)
-        wrong_image_idx = wrong_perm[start:end]
-        return tf.convert_to_tensor(self._images[start:end]), \
-               tf.convert_to_tensor(self._images[wrong_image_idx]), \
-               tf.convert_to_tensor(self._captions[start:end])
+            assert self.batch_size <= self._num_examples
+            self.current_position = 0
+        else:
+            real_images = tf.convert_to_tensor(self._images[i:i_end])
+            wrong_images = tf.convert_to_tensor(self._images[i:i_end])
+            captions = tf.convert_to_tensor(self._captions[i:i_end])
+            self.current_position = i_end
+        print(real_images, wrong_images, captions)
+        return real_images, wrong_images, captions
 
 
 def read_data_sets(data_root, image_file_dir, caption_file_name,

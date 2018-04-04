@@ -101,9 +101,8 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
     total_generator_loss = 0.0
     total_discriminator_loss = 0.0
     batch_index = 0
-    while not dataset.end_batch:
-        real_images, wrong_images, captions = dataset.next_batch()
-
+    for real_images, wrong_images, captions in dataset:
+        # real_images, wrong_images, captions = dataset.next_batch()
         with tf.device('/cpu:0'):
             tf.assign_add(step_counter, 1)
 
