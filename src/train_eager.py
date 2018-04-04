@@ -22,16 +22,16 @@ def main(args):
     # Load the datasets
     data, voc_size = read_data_sets('./data', 'pokemon_images',
                           'pokemon.csv',
-                          args.word_dim, args.batch_size,
+                          args.caption_max_dim, args.batch_size,
                           args.resized_image_size)
 
     dataset = data.train
     model_options = {
         'rnn_hidden': args.rnn_hidden,
-        'word_dim': args.word_dim,
-        'voc_size': voc_size,
+        'voc_dim': voc_size,
+        'embedded_size': args.rnn_output_dim,
         'z_dim': args.z_dim,
-        't_dim': args.t_dim,
+        'rnn_output_dim': args.rnn_output_dim,
         'batch_size': args.batch_size,
         'image_size': args.image_size,
         'gf_dim': args.gf_dim,
@@ -198,9 +198,11 @@ if __name__ == '__main__':
                         help='Number of nodes in the rnn hidden layer')
     parser.add_argument('--z_dim', type=int, default=100,
                         help='Noise dimension')
-    parser.add_argument('--word_dim', type=int, default=20,
+    parser.add_argument('--caption_max_dim', type=int, default=20,
                         help='Word embedding matrix dimension')
-    parser.add_argument('--t_dim', type=int, default=256,
+    parser.add_argument('--embedded_size', type=int, default=128,
+                        help='Word embedding matrix dimension')
+    parser.add_argument('--rnn_output_dim', type=int, default=256,
                         help='Text feature dimension')
     parser.add_argument('--batch_size', type=int, default=2,
                         help='Batch Size')

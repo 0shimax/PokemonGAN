@@ -2,11 +2,12 @@ import tensorflow as tf
 
 
 class BiRNN(tf.keras.Model):
-    def __init__(self, output_size, embedded_size, n_hidden, voc_size,
+    def __init__(self, output_size, embedded_size, n_hidden, voc_dim,
                  stddev=0.02, bias_start=0.0, dropout_rate=0.5, reuse=None):
         super().__init__()
 
-        self.word_embeddings = tf.keras.layers.Embedding(150, embedded_size)
+        self.word_embeddings = tf.keras.layers.Embedding(
+            voc_dim, embedded_size)
         self.bidirectional = tf.keras.layers.Bidirectional(
             tf.keras.layers.LSTM(n_hidden))
         self.lin = tf.keras.layers.Dense(output_size)
@@ -18,51 +19,51 @@ class BiRNN(tf.keras.Model):
         return out
 
 
-class Sampler(tf.keras.Model):
-    def __init__(self, options, t_z, t_text_embedding):
-        super().__init__()
-
-        s = options['image_size']
-        s2, s4, s8, s16 = int(s/2), int(s/4), int(s/8), int(s/16)
-        """ dim 2400 -> 256 """
-
-        self.bi_rnn = BiRNN(options['t_dim'], options['word_dim'],
-                            options['rnn_hidden'], options['voc_size'])
-
-        self.g_h0_lin = \
-            tf.keras.layers.Dense(options['gf_dim']*8*s16*s16)
-        self.g_h1 = tf.keras.layers.Conv2DTranspose(
-            filters=options['gf_dim']*4, kernel_size=5, strides=2)
-        self.g_h2 = tf.keras.layers.Conv2DTranspose(
-            filters=options['gf_dim']*2*4, kernel_size=5, strides=2)
-        self.g_h3 = tf.keras.layers.Conv2DTranspose(
-            filters=options['gf_dim']*1, kernel_size=5, strides=2)
-        self.g_h4 = tf.keras.layers.Conv2DTranspose(
-            filters=3, kernel_size=5, strides=2)
-
-        self.g_bn0 = tf.keras.layers.BatchNormalization()
-        self.g_bn1 = tf.keras.layers.BatchNormalization()
-        self.g_bn2 = tf.keras.layers.BatchNormalization()
-        self.g_bn3 = tf.keras.layers.BatchNormalization()
-
-    def call(self, t_z, t_text_embedding):
-        reduced_text_embedding = self.bi_rnn(t_text_embedding)
-        z_concat = tf.concat([t_z, reduced_text_embedding], 1)
-        z_ = self.g_h0_lin(z_concat)
-        h0 = tf.reshape(z_, [-1, s16, s16, self.options['gf_dim']*8])
-        h0 = tf.nn.relu(self.g_bn0(h0, train=False))
-
-        h1 = self.g_h1(h0)
-        h1 = tf.nn.relu(self.g_bn1(h1, train=False))
-
-        h2 = self.g_h2(h1)
-        h2 = tf.nn.relu(self.g_bn2(h2, train=False))
-
-        h3 = self.g_h3(h2)
-        h3 = tf.nn.relu(self.g_bn3(h3, train=False))
-
-        h4 = self.g_h4(h3)
-        return (tf.tanh(h4)/2. + 0.5)
+# class Sampler(tf.keras.Model):
+#     def __init__(self, options, t_z, t_text_embedding):
+#         super().__init__()
+#
+#         s = options['image_size']
+#         s2, s4, s8, s16 = int(s/2), int(s/4), int(s/8), int(s/16)
+#         """ dim 2400 -> 256 """
+#
+#         self.bi_rnn = BiRNN(options['rnn_output_dim'], options['embedded_size'],
+#                             options['rnn_hidden'], options['voc_dim'])
+#
+#         self.g_h0_lin = \
+#             tf.keras.layers.Dense(options['gf_dim']*8*s16*s16)
+#         self.g_h1 = tf.keras.layers.Conv2DTranspose(
+#             filters=options['gf_dim']*4, kernel_size=5, strides=2)
+#         self.g_h2 = tf.keras.layers.Conv2DTranspose(
+#             filters=options['gf_dim']*2*4, kernel_size=5, strides=2)
+#         self.g_h3 = tf.keras.layers.Conv2DTranspose(
+#             filters=options['gf_dim']*1, kernel_size=5, strides=2)
+#         self.g_h4 = tf.keras.layers.Conv2DTranspose(
+#             filters=3, kernel_size=5, strides=2)
+#
+#         self.g_bn0 = tf.keras.layers.BatchNormalization()
+#         self.g_bn1 = tf.keras.layers.BatchNormalization()
+#         self.g_bn2 = tf.keras.layers.BatchNormalization()
+#         self.g_bn3 = tf.keras.layers.BatchNormalization()
+#
+#     def call(self, t_z, t_text_embedding):
+#         reduced_text_embedding = self.bi_rnn(t_text_embedding)
+#         z_concat = tf.concat([t_z, reduced_text_embedding], 1)
+#         z_ = self.g_h0_lin(z_concat)
+#         h0 = tf.reshape(z_, [-1, s16, s16, self.options['gf_dim']*8])
+#         h0 = tf.nn.relu(self.g_bn0(h0, train=False))
+#
+#         h1 = self.g_h1(h0)
+#         h1 = tf.nn.relu(self.g_bn1(h1, train=False))
+#
+#         h2 = self.g_h2(h1)
+#         h2 = tf.nn.relu(self.g_bn2(h2, train=False))
+#
+#         h3 = self.g_h3(h2)
+#         h3 = tf.nn.relu(self.g_bn3(h3, train=False))
+#
+#         h4 = self.g_h4(h3)
+#         return (tf.tanh(h4)/2. + 0.5)
 
 
 # GENERATOR IMPLEMENTATION based on:
@@ -76,8 +77,8 @@ class Generator(tf.keras.Model):
         self.s2, self.s4, self.s8, self.s16 = \
             int(s/2), int(s/4), int(s/8), int(s/16)
 
-        self.bi_rnn = BiRNN(options['t_dim'], options['word_dim'],
-                            options['rnn_hidden'], options['voc_size'])
+        self.bi_rnn = BiRNN(options['rnn_output_dim'], options['embedded_size'],
+                            options['rnn_hidden'], options['voc_dim'])
         self.g_h0_lin = tf.keras.layers.Dense(
             options['gf_dim']*8*self.s16*self.s16, activation=tf.tanh)
 
@@ -135,8 +136,8 @@ class Discriminator(tf.keras.Model):
         self.d_h3_conv_new = tf.keras.layers.Conv2D(options['df_dim']*8,
             kernel_size=1, strides=1)
 
-        self.bi_rnn = BiRNN(options['t_dim'], options['word_dim'],
-                            options['rnn_hidden'], options['voc_size'])
+        self.bi_rnn = BiRNN(options['rnn_output_dim'], options['embedded_size'],
+                            options['rnn_hidden'], options['voc_dim'])
         self.d_h3_lin = tf.keras.layers.Dense(1)
 
         self.d_bn1 = tf.keras.layers.BatchNormalization()
