@@ -82,7 +82,6 @@ class DataSet(tf.data.Dataset):
             wrong_images = tf.convert_to_tensor(self._images[i:i_end])
             captions = tf.convert_to_tensor(self._captions[i:i_end])
             self.current_position = i_end
-        print(real_images, wrong_images, captions)
         return real_images, wrong_images, captions
 
 
