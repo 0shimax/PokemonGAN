@@ -15,9 +15,10 @@ class BiRNN(tf.keras.Model):
 
     def bi_directional(self, input_):
         # https://github.com/keras-team/keras/issues/2838
+        print(input_.shape)
         rnn_fwd1 = self.lstm_fw(input_)
         rnn_fwd1 = self.fw_dropout(rnn_fwd1)
-        rnn_bwd1 = self.lstm_fw(rnn_fwd1)
+        rnn_bwd1 = self.lstm_bw(rnn_fwd1)
         rnn_bwd1 = self.bw_dropout(rnn_bwd1)
         rnn_bidir1 = tf.keras.layers.merge([rnn_fwd1, rnn_bwd1], mode='concat')
         return rnn_bidir1
@@ -86,6 +87,7 @@ class Generator(tf.keras.Model):
         s = options['image_size']
         s2, s4, s8, s16 = int(s/2), int(s/4), int(s/8), int(s/16)
 
+        print("options['t_dim']", options['t_dim'])
         self.bi_rnn = BiRNN(options['t_dim'], options['word_dim'],
                             options['rnn_hidden'])
         self.g_h0_lin = tf.keras.layers.Dense(options['gf_dim']*8*s16*s16)

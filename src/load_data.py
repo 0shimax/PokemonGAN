@@ -104,7 +104,7 @@ def read_data_sets(data_root, image_file_dir, caption_file_name,
     captions = df_captions.abilities.apply(padding_ignore_tag).values
 
     images = [resize(rgba2rgb(io.imread(Path(image_dir_path, image_name))),
-                  (64,64,3,))
+                  (64,64))
               for image_name in image_file_names]
     images = numpy.array(images, dtype=numpy.float32)
 
