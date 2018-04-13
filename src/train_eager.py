@@ -197,7 +197,7 @@ if __name__ == '__main__':
                         help='Number of nodes in the rnn hidden layer')
     parser.add_argument('--z_dim', type=int, default=100,
                         help='Noise dimension')
-    parser.add_argument('--caption_max_dim', type=int, default=20,
+    parser.add_argument('--caption_max_dim', type=int, default=5,
                         help='Word embedding matrix dimension')
     parser.add_argument('--embedded_size', type=int, default=128,
                         help='Word embedding matrix dimension')

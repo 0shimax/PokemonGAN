@@ -19,53 +19,6 @@ class BiRNN(tf.keras.Model):
         return out
 
 
-# class Sampler(tf.keras.Model):
-#     def __init__(self, options, t_z, t_text_embedding):
-#         super().__init__()
-#
-#         s = options['image_size']
-#         s2, s4, s8, s16 = int(s/2), int(s/4), int(s/8), int(s/16)
-#         """ dim 2400 -> 256 """
-#
-#         self.bi_rnn = BiRNN(options['rnn_output_dim'], options['embedded_size'],
-#                             options['rnn_hidden'], options['voc_dim'])
-#
-#         self.g_h0_lin = \
-#             tf.keras.layers.Dense(options['gf_dim']*8*s16*s16)
-#         self.g_h1 = tf.keras.layers.Conv2DTranspose(
-#             filters=options['gf_dim']*4, kernel_size=5, strides=2)
-#         self.g_h2 = tf.keras.layers.Conv2DTranspose(
-#             filters=options['gf_dim']*2*4, kernel_size=5, strides=2)
-#         self.g_h3 = tf.keras.layers.Conv2DTranspose(
-#             filters=options['gf_dim']*1, kernel_size=5, strides=2)
-#         self.g_h4 = tf.keras.layers.Conv2DTranspose(
-#             filters=3, kernel_size=5, strides=2)
-#
-#         self.g_bn0 = tf.keras.layers.BatchNormalization()
-#         self.g_bn1 = tf.keras.layers.BatchNormalization()
-#         self.g_bn2 = tf.keras.layers.BatchNormalization()
-#         self.g_bn3 = tf.keras.layers.BatchNormalization()
-#
-#     def call(self, t_z, t_text_embedding):
-#         reduced_text_embedding = self.bi_rnn(t_text_embedding)
-#         z_concat = tf.concat([t_z, reduced_text_embedding], 1)
-#         z_ = self.g_h0_lin(z_concat)
-#         h0 = tf.reshape(z_, [-1, s16, s16, self.options['gf_dim']*8])
-#         h0 = tf.nn.relu(self.g_bn0(h0, train=False))
-#
-#         h1 = self.g_h1(h0)
-#         h1 = tf.nn.relu(self.g_bn1(h1, train=False))
-#
-#         h2 = self.g_h2(h1)
-#         h2 = tf.nn.relu(self.g_bn2(h2, train=False))
-#
-#         h3 = self.g_h3(h2)
-#         h3 = tf.nn.relu(self.g_bn3(h3, train=False))
-#
-#         h4 = self.g_h4(h3)
-#         return (tf.tanh(h4)/2. + 0.5)
-
-
 # GENERATOR IMPLEMENTATION based on:
 #     https://github.com/carpedm20/DCGAN-tensorflow/blob/master/model.py
 class Generator(tf.keras.Model):
