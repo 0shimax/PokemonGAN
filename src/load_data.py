@@ -99,30 +99,28 @@ def get_images_and_captions(image_file_names, image_dir_path,
             return l_caption[:caption_dim]
         return l_caption
 
-    images = numpy.empty([len(image_file_names),
-                          resized_image_size,
-                          resized_image_size, 3], dtype=numpy.float32)
+    # images = numpy.empty([len(image_file_names),
+    #                       resized_image_size,
+    #                       resized_image_size, 3], dtype=numpy.float32)
+    images = []
     captions = []
 
     for idx, image_name in enumerate(image_file_names):
-        print(image_name)
-        img = io.imread(Path(image_dir_path, image_name))
-        print(img.shape)
-        resized = resize(img, (resized_image_size, resized_image_size))
-        print(resized.shape)
+        try:
+            img = io.imread(Path(image_dir_path, image_name))
+            resized = resize(img, (resized_image_size, resized_image_size))
 
-        images[idx] = resized
+            pokemon_name, _ = splitext(image_name)
+            caption = \
+                df_data[df_data['name']==pokemon_name].abilities.values[0]
+            caption = padding_ignore_tag(caption)
+            caption.insert(0, pokemon_name)
+            captions.append(caption)
+            images.append(resized)
+        except:
+            pass
 
-        pokemon_name, _ = splitext(image_name)
-        print(pokemon_name)
-        caption = \
-            df_data[df_data['name']==pokemon_name].abilities.values[0]
-        print(caption)
-        caption = padding_ignore_tag(caption)
-        caption.insert(0, pokemon_name)
-        captions.append(caption)
-        print(caption)
-    return images, captions
+    return numpy.array(images, dtype=numpy.float32), captions
 
 
 def read_data_sets(data_root, image_file_dir, caption_file_name,
