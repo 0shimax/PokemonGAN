@@ -74,9 +74,9 @@ def train(args, model_objects, device, dataset):
             start = time.time()
             with summary_writer.as_default():
                 train_one_epoch(**model_objects,
-                dataset=dataset,
-                log_interval=args.log_interval,
-                noise_dim=args.noise_dim)
+                                dataset=dataset,
+                                log_interval=args.log_interval,
+                                noise_dim=args.noise_dim)
 
             end = time.time()
             checkpoint.save(checkpoint_prefix)
@@ -123,10 +123,7 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
                 generated_images = generator(noise, captions)
                 tf.contrib.summary.image(
                     'generated_images',
-                    tf.reshape(
-                        generated_images * 255,
-                        [-1, args.resized_image_size,
-                         args.resized_image_size, 3]),
+                    generated_images * 255,
                     max_images=300)
 
                 discriminator_real_outputs =\

@@ -15,7 +15,7 @@ class InstanceNormalization(tf.keras.Model):
             mean, var = tf.nn.moments(inputs, [1], keep_dims=True)
             return (inputs - mean) / tf.sqrt(var + tf.keras.backend.epsilon())
         elif len(input_shape) == 4:
-            mean, var = tf.nn.moments(inputs, [2, 3], keep_dims=True)
+            mean, var = tf.nn.moments(inputs, [1, 2], keep_dims=True)
             return (inputs - mean) / tf.sqrt(var + tf.keras.backend.epsilon())
         else:
             raise ValueError("Not valid")
@@ -87,16 +87,16 @@ class Generator(tf.keras.Model):
         h0 = tf.reshape(z_,
             [-1, self.s16, self.s16, self.options['gf_dim'] * 8])
 
-        h0 = tf.nn.relu(self.g_norm0(h0))
+        h0 = tf.nn.elu(self.g_norm0(h0))
 
         h1 = self.g_h1(h0)
-        h1 = tf.nn.relu(self.g_norm1(h1))
+        h1 = tf.nn.elu(self.g_norm1(h1))
 
         h2 = self.g_h2(h1)
-        h2 = tf.nn.relu(self.g_norm2(h2))
+        h2 = tf.nn.elu(self.g_norm2(h2))
 
         h3 = self.g_h3(h2)
-        h3 = tf.nn.relu(self.g_norm3(h3))
+        h3 = tf.nn.elu(self.g_norm3(h3))
         return self.g_h4(h3)
 
 
@@ -142,19 +142,27 @@ class Discriminator(tf.keras.Model):
             x = tf.reduce_mean(x, axis=1)
         return x
 
-    def __call__(self, image, t_text_embedding):
+    def _add_noise(self, h, sigma=0.2):
+        return h + sigma * tf.random_normal(h.shape)
+
+    def __call__(self, image, t_text_embedding, training=True):
         n_batch, _, _, _ = image.shape
-        h0 = self.d_h0_conv(image)  # 32
-        h1 = tf.nn.leaky_relu(self.d_norm1(self.d_h1_conv(h0)))  # 16
-        h2 = tf.nn.leaky_relu(self.d_norm2(self.d_h2_conv(h1)))  # 8
-        h3 = tf.nn.leaky_relu(self.d_norm3(self.d_h3_conv(h2)))  # 4
+        if training:
+            h = self._add_noise(image)
+        else:
+            h = image
+
+        h0 = self.d_h0_conv(h)  # 32
+        h1 = tf.nn.elu(self.d_norm1(self.d_h1_conv(h0)))  # 16
+        h2 = tf.nn.elu(self.d_norm2(self.d_h2_conv(h1)))  # 8
+        h3 = tf.nn.elu(self.d_norm3(self.d_h3_conv(h2)))  # 4
 
         # h3_pooled = self._global_average_pooling(h3)
         h3_flatten = self.flatten(h3)
         reduced_text_embeddings = self.bi_rnn(t_text_embedding)
 
         h3_concat = tf.concat([h3_flatten, reduced_text_embeddings], 1)
-        hf1 = tf.nn.leaky_relu(self.d_norm4(self.d_fc1(h3_concat)))
+        hf1 = tf.nn.elu(self.d_norm4(self.d_fc1(h3_concat)))
         hf2 = self.d_fc2(hf1)
 
         return hf2
