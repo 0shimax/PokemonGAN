@@ -119,7 +119,7 @@ def get_images_and_captions(image_file_names, image_dir_path,
 
             pokemon_name, _ = splitext(image_name)
             caption = \
-                df_data[df_data['name']==pokemon_name].abilities.values[0]
+                df_data[df_data['name'] == pokemon_name].abilities.values[0]
             caption = padding_ignore_tag(caption)
             caption.insert(0, pokemon_name)
             captions.append(caption)
@@ -131,7 +131,8 @@ def get_images_and_captions(image_file_names, image_dir_path,
 
 
 def read_data_sets(data_root, image_file_dir, caption_file_name,
-                   caption_dim, batch_size, resized_image_size):
+                   caption_dim, batch_size, resized_image_size,
+                   wv_model):
     class DataSets(object):
         pass
 
@@ -152,7 +153,7 @@ def read_data_sets(data_root, image_file_dir, caption_file_name,
 
     n_data = len(images)
     captions = captions[:n_data]
-    captions, voc_size = caption_to_one_hot(captions)
+    captions, voc_size = caption_to_one_hot(captions, wv_model)
 
     train_images, test_images, train_captions, test_captions = \
         train_test_split(images, captions,
@@ -163,13 +164,9 @@ def read_data_sets(data_root, image_file_dir, caption_file_name,
     return data_sets, voc_size
 
 
-def caption_to_one_hot(captions):
+def caption_to_one_hot(captions, wv_model):
     vocab = Dictionary(captions)
-    one_hot_matrix = numpy.array([[vocab.token2id[word] \
-        for word in words] for words in captions])
+    one_hot_matrix = numpy.array(
+        [[wv_model.wv.vocab[word].index for word in words]
+            for words in captions])
     return one_hot_matrix, len(vocab.keys())
-
-# def get_training_batch(data_set, image_size, z_dim):
-#     real_images, wrong_images, captions = data_set.next_batch()
-# 	z_noise = np.random.uniform(-1, 1, [data_set.batch_size, z_dim])
-# 	return real_images, wrong_images, captions, z_noise

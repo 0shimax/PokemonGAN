@@ -7,9 +7,20 @@ import random
 import os
 import time
 from pathlib import Path
+import gensim
 
 import model
 from load_data import read_data_sets
+
+
+def read_wv_model(args):
+    return gensim.models.Word2Vec.load(args.embedding_dir + "/wv.model")
+
+
+def read_embedding_matrix(args):
+    matrix_path = Path(args.embedding_dir, 'embedding_matrix.npz')
+    with np.load(matrix_path) as data:
+        return data['weight']
 
 
 def main(args):
@@ -21,10 +32,12 @@ def main(args):
     print('Using device %s, and data format %s.' % (device, data_format))
 
     # Load the datasets
-    data, voc_size = read_data_sets('./data', 'pokemon_images',
-                          'pokemon.csv',
-                          args.caption_max_dim, args.batch_size,
-                          args.resized_image_size)
+    data, voc_size = read_data_sets(
+        './data', 'pokemon_images',
+        'pokemon.csv',
+        args.caption_max_dim, args.batch_size,
+        args.resized_image_size,
+        read_wv_model(args))
 
     dataset = data.train
     # dataset = tf.data.Dataset \
@@ -42,6 +55,7 @@ def main(args):
         'gf_dim': args.gf_dim,
         'df_dim': args.df_dim,
         'gfc_dim': args.gfc_dim,
+        'embedding_matrix': read_embedding_matrix(args)
     }
 
     # Create the models and optimizers.
@@ -202,7 +216,7 @@ if __name__ == '__main__':
                         help='Number of nodes in the rnn hidden layer')
     parser.add_argument('--noise-dim', type=int, default=30,
                         help='Noise dimention')
-    parser.add_argument('--caption_max_dim', type=int, default=10,
+    parser.add_argument('--caption_max_dim', type=int, default=5,
                         help='Word embedding matrix dimension')
     parser.add_argument('--embedded_size', type=int, default=128,
                         help='Word embedding matrix dimension')
@@ -227,6 +241,8 @@ if __name__ == '__main__':
                         help='Output Directory')
     parser.add_argument('--checkpoint_dir', type=str, default="./results/ckpt",
                         help='Checkpoint Directory')
+    parser.add_argument('--embedding_dir', type=str, default="./data/embedding",
+                        help='Embedding Directory')
     parser.add_argument('--learning_rate', type=float, default=0.0002,
                         help='Learning Rate')
     parser.add_argument('--beta1', type=float, default=0.5,

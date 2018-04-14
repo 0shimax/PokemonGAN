@@ -23,11 +23,13 @@ class InstanceNormalization(tf.keras.Model):
 
 class BiRNN(tf.keras.Model):
     def __init__(self, output_size, embedded_size, n_hidden, voc_dim,
+                 embedding_matrix,
                  stddev=0.02, bias_start=0.0, dropout_rate=0.5, reuse=None):
         super().__init__()
 
         self.word_embeddings = tf.keras.layers.Embedding(
-            voc_dim, embedded_size)
+            voc_dim, embedded_size, weights=[embedding_matrix], trainable=False)
+        # self.word_embeddings.set_weights([embedding_matrix])
         self.bidirectional = tf.keras.layers.Bidirectional(
             tf.keras.layers.LSTM(n_hidden))
         self.lin = tf.keras.layers.Dense(output_size)
@@ -51,7 +53,8 @@ class Generator(tf.keras.Model):
             int(s/2), int(s/4), int(s/8), int(s/16)
 
         self.bi_rnn = BiRNN(options['rnn_output_dim'], options['embedded_size'],
-                            options['rnn_hidden'], options['voc_dim'])
+                            options['rnn_hidden'], options['voc_dim'],
+                            options['embedding_matrix'])
         self.g_h0_lin = tf.keras.layers.Dense(
             options['gf_dim']*8*self.s16*self.s16, activation=tf.tanh)
 
@@ -120,7 +123,8 @@ class Discriminator(tf.keras.Model):
         #     kernel_size=1, strides=1, padding="same")
 
         self.bi_rnn = BiRNN(options['rnn_output_dim'], options['embedded_size'],
-                            options['rnn_hidden'], options['voc_dim'])
+                            options['rnn_hidden'], options['voc_dim'],
+                            options['embedding_matrix'])
 
         self.flatten = tf.keras.layers.Flatten()
         self.d_fc1 = tf.keras.layers.Dense(1024)
