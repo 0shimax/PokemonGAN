@@ -52,22 +52,27 @@ class DataSet(tf.data.Dataset):
 
     def __iter__(self):
         """Returns self."""
+        self.i_end = None
         return self
 
     # def next_batch(self):
     def __next__(self):
         """Return the next `batch_size` examples from this data set."""
+        if self.i_end is not None and self.i_end > self._num_examples:
+            self.i_end = None
+            raise StopIteration
+
         i = self.current_position
-        i_end = i + self.batch_size
+        self.i_end = i + self.batch_size
 
         # Shuffle wrong image index
         wrong_perm = numpy.random.permutation(self._num_examples)
 
-        if i_end > self._num_examples:
+        if self.i_end > self._num_examples:
             wrong_image_idx = wrong_perm[i:]
             real_images = tf.convert_to_tensor(self._images[i:])
             wrong_images = tf.convert_to_tensor(self._images[wrong_image_idx])
-            captions = tf.convert_to_tensor(self._captions[si:])
+            captions = tf.convert_to_tensor(self._captions[i:])
 
             # Finished epoch
             self._epochs_completed += 1
@@ -79,10 +84,12 @@ class DataSet(tf.data.Dataset):
             assert self.batch_size <= self._num_examples
             self.current_position = 0
         else:
-            real_images = tf.convert_to_tensor(self._images[i:i_end])
-            wrong_images = tf.convert_to_tensor(self._images[i:i_end])
-            captions = tf.convert_to_tensor(self._captions[i:i_end])
-            self.current_position = i_end
+            wrong_image_idx = wrong_perm[i:self.i_end]
+            real_images = tf.convert_to_tensor(self._images[i:self.i_end])
+            wrong_images = tf.convert_to_tensor(self._images[wrong_image_idx])
+            captions = tf.convert_to_tensor(self._captions[i:self.i_end])
+            self.current_position = self.i_end
+
         return real_images, wrong_images, captions
 
 

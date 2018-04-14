@@ -6,6 +6,7 @@ import argparse
 import random
 import os
 import time
+from pathlib import Path
 
 import model
 from load_data import read_data_sets
@@ -26,18 +27,21 @@ def main(args):
                           args.resized_image_size)
 
     dataset = data.train
+    # dataset = tf.data.Dataset \
+    #     .from_tensor_slices((dataset.images, dataset.captions)) \
+    #     .shuffle(buffer_size=1000) \
+    #     .batch(args.batch_size) \
+
     model_options = {
         'rnn_hidden': args.rnn_hidden,
         'voc_dim': voc_size,
         'embedded_size': args.rnn_output_dim,
-        'z_dim': args.z_dim,
         'rnn_output_dim': args.rnn_output_dim,
         'batch_size': args.batch_size,
-        'image_size': args.image_size,
+        'image_size': args.resized_image_size,
         'gf_dim': args.gf_dim,
         'df_dim': args.df_dim,
         'gfc_dim': args.gfc_dim,
-        'caption_vector_length': args.caption_vector_length
     }
 
     # Create the models and optimizers.
@@ -53,7 +57,7 @@ def main(args):
 
 def train(args, model_objects, device, dataset):
     # Prepare summary writer and checkpoint info
-    summary_writer = tf.contrib.summary.create_summary_file_writer(
+    summary_writer = tf.contrib.summary.create_file_writer(
         args.out_dir, flush_millis=1000)
     checkpoint_prefix = os.path.join(args.checkpoint_dir, 'ckpt')
     latest_cpkt = tf.train.latest_checkpoint(args.checkpoint_dir)
@@ -101,8 +105,8 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
     total_generator_loss = 0.0
     total_discriminator_loss = 0.0
     batch_index = 0
+
     for real_images, wrong_images, captions in dataset:
-        # real_images, wrong_images, captions = dataset.next_batch()
         with tf.device('/cpu:0'):
             tf.assign_add(step_counter, 1)
 
@@ -119,34 +123,33 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
                 generated_images = generator(noise, captions)
                 tf.contrib.summary.image(
                     'generated_images',
-                    tf.reshape(generated_images, [-1, 64, 64, 3]),
-                    max_images=10)
+                    tf.reshape(
+                        generated_images * 255,
+                        [-1, args.resized_image_size,
+                         args.resized_image_size, 3]),
+                    max_images=300)
 
-                discriminator_gen_outputs, discriminator_gen_outputs_logit  = \
+                discriminator_real_outputs =\
                     discriminator(real_images, captions)
-                discriminator_real_outputs, discriminator_real_outputs_logit = \
+                discriminator_wrong_outputs =\
                     discriminator(wrong_images, captions)
-                discriminator_fake_outputs, discriminator_fake_outputs_logit = \
+                discriminator_gen_outputs =\
                     discriminator(generated_images, captions)
 
                 discriminator_loss_val = \
-                    discriminator_loss(discriminator_gen_outputs_logit,
-                                       discriminator_gen_outputs,
-                                       discriminator_real_outputs_logit,
-                                       discriminator_real_outputs,
-                                       discriminator_fake_outputs_logit,
-                                       discriminator_fake_outputs)
+                    discriminator_loss(discriminator_real_outputs,
+                                       discriminator_wrong_outputs,
+                                       discriminator_gen_outputs)
                 total_discriminator_loss += discriminator_loss_val
 
-                generator_loss_val = generator_loss(
-                    discriminator_fake_outputs,
-                    discriminator_fake_outputs_logit)
+                generator_loss_val = generator_loss(discriminator_gen_outputs)
 
                 total_generator_loss += generator_loss_val
 
-            generator_grad = g.gradient(generator_loss_val, generator.variables)
+            generator_grad = g.gradient(generator_loss_val,
+                                        generator.variables)
             discriminator_grad = g.gradient(discriminator_loss_val,
-                                          discriminator.variables)
+                                            discriminator.variables)
 
             generator_optimizer.apply_gradients(
                 zip(generator_grad, generator.variables))
@@ -162,30 +165,35 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
         batch_index += 1
 
 
-def discriminator_loss(disc_real_image_logits, disc_real_image_prob,
-                       disc_wrong_image_logits, disc_wrong_image_prob,
-                       disc_fake_image_logits, disc_fake_image_prob):
-    d_loss1 = tf.reduce_mean(
-        tf.nn.sigmoid_cross_entropy_with_logits(
-            logits=disc_real_image_logits,
-            labels=tf.ones_like(disc_real_image_prob)))
-    d_loss2 = tf.reduce_mean(
-        tf.nn.sigmoid_cross_entropy_with_logits(
-            logits=disc_wrong_image_logits,
-            labels=tf.zeros_like(disc_wrong_image_prob)))
-    d_loss3 = tf.reduce_mean(
-        tf.nn.sigmoid_cross_entropy_with_logits(
-            logits=disc_fake_image_logits,
-            labels=tf.zeros_like(disc_fake_image_prob)))
-    d_loss = d_loss1 + d_loss2 + d_loss3
+def discriminator_loss(discriminator_real_outputs,
+                       discriminator_wrong_outputs,
+                       discriminator_gen_outputs):
+
+    loss_on_real = tf.losses.sigmoid_cross_entropy(
+        tf.ones_like(discriminator_real_outputs),
+        discriminator_real_outputs,
+        label_smoothing=0.25)
+
+    loss_on_generated = tf.losses.sigmoid_cross_entropy(
+        tf.zeros_like(discriminator_gen_outputs), discriminator_gen_outputs)
+
+    loss_on_wrong = tf.losses.sigmoid_cross_entropy(
+        tf.zeros_like(discriminator_wrong_outputs),
+        discriminator_wrong_outputs)
+
+    d_loss = loss_on_real + loss_on_generated + loss_on_wrong
+
+    tf.contrib.summary.scalar('discriminator_loss', d_loss)
     return d_loss
 
 
-def generator_loss(disc_fake_image_logits, disc_fake_image_prob):
-    g_loss = tf.reduce_mean(
-        tf.nn.sigmoid_cross_entropy_with_logits(
-            logits=disc_fake_image_logits,
-            labels=tf.ones_like(disc_fake_image_prob)))
+def generator_loss(discriminator_fake_outputs):
+
+    g_loss = tf.losses.sigmoid_cross_entropy(
+        tf.ones_like(discriminator_fake_outputs),
+        discriminator_fake_outputs)
+
+    tf.contrib.summary.scalar('generator_loss', g_loss)
     return g_loss
 
 
@@ -195,17 +203,17 @@ if __name__ == '__main__':
                         help='Use GPU')
     parser.add_argument('--rnn_hidden', type=int, default=200,
                         help='Number of nodes in the rnn hidden layer')
-    parser.add_argument('--z_dim', type=int, default=100,
-                        help='Noise dimension')
-    parser.add_argument('--caption_max_dim', type=int, default=5,
+    parser.add_argument('--noise-dim', type=int, default=30,
+                        help='Noise dimention')
+    parser.add_argument('--caption_max_dim', type=int, default=10,
                         help='Word embedding matrix dimension')
     parser.add_argument('--embedded_size', type=int, default=128,
                         help='Word embedding matrix dimension')
-    parser.add_argument('--rnn_output_dim', type=int, default=256,
+    parser.add_argument('--rnn_output_dim', type=int, default=128,
                         help='Text feature dimension')
-    parser.add_argument('--batch_size', type=int, default=2,
+    parser.add_argument('--batch_size', type=int, default=64,
                         help='Batch Size')
-    parser.add_argument('--image_size', type=int, default=32,
+    parser.add_argument('--image_size', type=int, default=64,
                         help='Image Size a, a x a')
     parser.add_argument('--gf_dim', type=int, default=64,
                         help='Number of conv in the first layer gen.')
@@ -214,8 +222,6 @@ if __name__ == '__main__':
     parser.add_argument('--gfc_dim', type=int, default=1024,
                         help='Dimension of gen untis \
                               for fully connected layer 1024')
-    parser.add_argument('--caption_vector_length', type=int, default=20,
-                        help='Caption Vector Length')
     parser.add_argument('--resized_image_size', type=int, default=64,
                         help='Size of resized images')
     parser.add_argument('--data_dir', type=str, default="./data",
@@ -230,17 +236,11 @@ if __name__ == '__main__':
                         help='Momentum for Adam Update')
     parser.add_argument('--epochs', type=int, default=600,
                         help='Max number of epochs')
-    parser.add_argument('--log_interval', type=int, default=1000,
+    parser.add_argument('--log_interval', type=int, default=5,
                         help='Log interval')
-    parser.add_argument('--noise-dim', type=int, default=30,
-                        help='Noise dimention')
-    parser.add_argument('--save_every', type=int, default=30,
-                        help='Save Model/Samples every x iterations \
-                              over batches')
-    parser.add_argument('--resume_model', type=str, default=None,
-                        help='Pre-Trained Model Path, to resume from')
-    parser.add_argument('--data_set', type=str, default="flowers",
-                        help='Dat set: MS-COCO, flowers')
     args = parser.parse_args()
+
+    Path(args.out_dir).mkdir(parents=True, exist_ok=True)
+    Path(args.checkpoint_dir).mkdir(parents=True, exist_ok=True)
 
     main(args)

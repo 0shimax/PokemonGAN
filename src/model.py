@@ -1,6 +1,26 @@
 import tensorflow as tf
 
 
+class InstanceNormalization(tf.keras.Model):
+    """
+    ref: https://qiita.com/t-ae/items/39daefcdbe8bf927e4f3
+    """
+    def __init__(self):
+        super().__init__()
+
+    def call(self, inputs):
+        input_shape = inputs.shape
+
+        if len(input_shape) == 2:
+            mean, var = tf.nn.moments(inputs, [1], keep_dims=True)
+            return (inputs - mean) / tf.sqrt(var + tf.keras.backend.epsilon())
+        elif len(input_shape) == 4:
+            mean, var = tf.nn.moments(inputs, [2, 3], keep_dims=True)
+            return (inputs - mean) / tf.sqrt(var + tf.keras.backend.epsilon())
+        else:
+            raise ValueError("Not valid")
+
+
 class BiRNN(tf.keras.Model):
     def __init__(self, output_size, embedded_size, n_hidden, voc_dim,
                  stddev=0.02, bias_start=0.0, dropout_rate=0.5, reuse=None):
@@ -36,18 +56,28 @@ class Generator(tf.keras.Model):
             options['gf_dim']*8*self.s16*self.s16, activation=tf.tanh)
 
         self.g_h1 = tf.keras.layers.Conv2DTranspose(
-            filters=options['gf_dim']*4, kernel_size=4, strides=2)
+            filters=options['gf_dim']*4, kernel_size=5,
+            strides=2, padding="same")
         self.g_h2 = tf.keras.layers.Conv2DTranspose(
-            filters=options['gf_dim']*2, kernel_size=4, strides=2)
+            filters=options['gf_dim']*2, kernel_size=5,
+            strides=2, padding="same")
         self.g_h3 = tf.keras.layers.Conv2DTranspose(
-            filters=options['gf_dim'], kernel_size=5, strides=2)
+            filters=options['gf_dim'], kernel_size=5,
+            strides=2, padding="same")
         self.g_h4 = tf.keras.layers.Conv2DTranspose(
-            filters=3, kernel_size=4, strides=2)
+            filters=3, kernel_size=5,
+            strides=2, padding="same",
+            activation=tf.nn.sigmoid)
 
-        self.g_bn0 = tf.keras.layers.BatchNormalization()
-        self.g_bn1 = tf.keras.layers.BatchNormalization()
-        self.g_bn2 = tf.keras.layers.BatchNormalization()
-        self.g_bn3 = tf.keras.layers.BatchNormalization()
+        # self.g_bn0 = tf.keras.layers.BatchNormalization()
+        # self.g_bn1 = tf.keras.layers.BatchNormalization()
+        # self.g_bn2 = tf.keras.layers.BatchNormalization()
+        # self.g_bn3 = tf.keras.layers.BatchNormalization()
+
+        self.g_norm0 = InstanceNormalization()
+        self.g_norm1 = InstanceNormalization()
+        self.g_norm2 = InstanceNormalization()
+        self.g_norm3 = InstanceNormalization()
 
     def __call__(self, t_z, t_text_embedding):
         reduced_text_embedding = self.bi_rnn(t_text_embedding)
@@ -57,19 +87,18 @@ class Generator(tf.keras.Model):
         h0 = tf.reshape(z_,
             [-1, self.s16, self.s16, self.options['gf_dim'] * 8])
 
-        h0 = tf.nn.relu(self.g_bn0(h0))
+        h0 = tf.nn.relu(self.g_norm0(h0))
 
         h1 = self.g_h1(h0)
-        h1 = tf.nn.relu(self.g_bn1(h1))
+        h1 = tf.nn.relu(self.g_norm1(h1))
 
         h2 = self.g_h2(h1)
-        h2 = tf.nn.relu(self.g_bn2(h2))
+        h2 = tf.nn.relu(self.g_norm2(h2))
 
         h3 = self.g_h3(h2)
-        h3 = tf.nn.relu(self.g_bn3(h3))
+        h3 = tf.nn.relu(self.g_norm3(h3))
+        return self.g_h4(h3)
 
-        h4 = self.g_h4(h3)
-        return (tf.tanh(h4)/2. + 0.5)
 
 # DISCRIMINATOR IMPLEMENTATION based on :
 #    https://github.com/carpedm20/DCGAN-tensorflow/blob/master/model.py
@@ -79,41 +108,53 @@ class Discriminator(tf.keras.Model):
         self.options = options
 
         self.d_h0_conv = tf.keras.layers.Conv2D(options['df_dim'],
-            kernel_size=5, strides=2, activation=tf.nn.leaky_relu)
+            kernel_size=5, strides=2, activation=tf.nn.leaky_relu,
+            padding="same")
         self.d_h1_conv = tf.keras.layers.Conv2D(options['df_dim']*2,
-            kernel_size=5, strides=2)
+            kernel_size=5, strides=2, padding="same")
         self.d_h2_conv = tf.keras.layers.Conv2D(options['df_dim']*4,
-            kernel_size=5, strides=2)
+            kernel_size=5, strides=2, padding="same")
         self.d_h3_conv = tf.keras.layers.Conv2D(options['df_dim']*8,
-            kernel_size=5, strides=2)
-        self.d_h3_conv_new = tf.keras.layers.Conv2D(options['df_dim']*8,
-            kernel_size=1, strides=1)
+            kernel_size=5, strides=2, padding="same")
+        # self.d_h3_conv_new = tf.keras.layers.Conv2D(options['df_dim']*8,
+        #     kernel_size=1, strides=1, padding="same")
 
         self.bi_rnn = BiRNN(options['rnn_output_dim'], options['embedded_size'],
                             options['rnn_hidden'], options['voc_dim'])
-        self.d_h3_lin = tf.keras.layers.Dense(1)
 
-        self.d_bn1 = tf.keras.layers.BatchNormalization()
-        self.d_bn2 = tf.keras.layers.BatchNormalization()
-        self.d_bn3 = tf.keras.layers.BatchNormalization()
-        self.d_bn4 = tf.keras.layers.BatchNormalization()
+        self.flatten = tf.keras.layers.Flatten()
+        self.d_fc1 = tf.keras.layers.Dense(1024)
+        self.d_fc2 = tf.keras.layers.Dense(1)
+
+        # self.d_bn1 = tf.keras.layers.BatchNormalization()
+        # self.d_bn2 = tf.keras.layers.BatchNormalization()
+        # self.d_bn3 = tf.keras.layers.BatchNormalization()
+        # self.d_bn4 = tf.keras.layers.BatchNormalization()
+        # self.d_bn5 = tf.keras.layers.BatchNormalization()
+
+        self.d_norm1 = InstanceNormalization()
+        self.d_norm2 = InstanceNormalization()
+        self.d_norm3 = InstanceNormalization()
+        self.d_norm4 = InstanceNormalization()
+
+    def _global_average_pooling(self, x):
+        for _ in range(2):
+            x = tf.reduce_mean(x, axis=1)
+        return x
 
     def __call__(self, image, t_text_embedding):
+        n_batch, _, _, _ = image.shape
         h0 = self.d_h0_conv(image)  # 32
-        h1 = tf.nn.leaky_relu(self.d_bn1(self.d_h1_conv(h0)))  # 16
-        h2 = tf.nn.leaky_relu(self.d_bn2(self.d_h2_conv(h1)))  # 8
-        h3 = tf.nn.leaky_relu(self.d_bn3(self.d_h3_conv(h2)))  # 4
+        h1 = tf.nn.leaky_relu(self.d_norm1(self.d_h1_conv(h0)))  # 16
+        h2 = tf.nn.leaky_relu(self.d_norm2(self.d_h2_conv(h1)))  # 8
+        h3 = tf.nn.leaky_relu(self.d_norm3(self.d_h3_conv(h2)))  # 4
 
-        # ADD TEXT EMBEDDING TO THE NETWORK
-        # TODO: replace this part with charcter base RNN
+        # h3_pooled = self._global_average_pooling(h3)
+        h3_flatten = self.flatten(h3)
         reduced_text_embeddings = self.bi_rnn(t_text_embedding)
-        reduced_text_embeddings = tf.expand_dims(reduced_text_embeddings, 1)
-        reduced_text_embeddings = tf.expand_dims(reduced_text_embeddings, 2)
 
-        tiled_embeddings = tf.tile(reduced_text_embeddings, [1, 1, 1, 2])
-        h3_concat = tf.concat([h3, tiled_embeddings], 3)
-        h3_new = tf.nn.leaky_relu(self.d_bn4(self.d_h3_conv_new(h3_concat)))
+        h3_concat = tf.concat([h3_flatten, reduced_text_embeddings], 1)
+        hf1 = tf.nn.leaky_relu(self.d_norm4(self.d_fc1(h3_concat)))
+        hf2 = self.d_fc2(hf1)
 
-        h4 = self.d_h3_lin(
-            tf.reshape(h3_new, [self.options['batch_size'], -1]))
-        return tf.nn.sigmoid(h4), h4
+        return hf2

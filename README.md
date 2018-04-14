@@ -1,0 +1,2 @@
+- TensorBoardで生成画像を見る
+    - `tensorboard --logdir=絶対パス`
