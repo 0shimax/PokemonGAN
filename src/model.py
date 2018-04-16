@@ -28,11 +28,15 @@ class BiRNN(tf.keras.Model):
         super().__init__()
 
         self.word_embeddings = tf.keras.layers.Embedding(
-            voc_dim, embedded_size, weights=[embedding_matrix], trainable=False)
+            voc_dim, embedded_size,
+            weights=[embedding_matrix], trainable=False,
+            embeddings_regularizer=tf.keras.regularizers.l1(0.01))
         # self.word_embeddings.set_weights([embedding_matrix])
         self.bidirectional = tf.keras.layers.Bidirectional(
-            tf.keras.layers.LSTM(n_hidden))
-        self.lin = tf.keras.layers.Dense(output_size)
+            tf.keras.layers.GRU(
+                n_hidden, kernel_regularizer=tf.keras.regularizers.l1(0.01)))
+        self.lin = tf.keras.layers.Dense(
+            output_size, kernel_regularizer=tf.keras.regularizers.l1(0.01))
 
     def call(self, input_):
         embedded_word_output = self.word_embeddings(input_)
@@ -60,22 +64,26 @@ class Generator(tf.keras.Model):
 
         self.g_h1 = tf.keras.layers.Conv2DTranspose(
             filters=options['gf_dim']*4, kernel_size=5,
-            strides=2, padding="same")
+            strides=2, padding="same",
+            kernel_regularizer=tf.keras.regularizers.l1(0.01))
         self.g_h2 = tf.keras.layers.Conv2DTranspose(
             filters=options['gf_dim']*2, kernel_size=5,
-            strides=2, padding="same")
+            strides=2, padding="same",
+            kernel_regularizer=tf.keras.regularizers.l1(0.01))
         self.g_h3 = tf.keras.layers.Conv2DTranspose(
             filters=options['gf_dim'], kernel_size=5,
-            strides=2, padding="same")
+            strides=2, padding="same",
+            kernel_regularizer=tf.keras.regularizers.l1(0.01))
         self.g_h4 = tf.keras.layers.Conv2DTranspose(
             filters=3, kernel_size=5,
             strides=2, padding="same",
+            kernel_regularizer=tf.keras.regularizers.l1(0.01),
             activation=tf.nn.sigmoid)
 
-        # self.g_bn0 = tf.keras.layers.BatchNormalization()
-        # self.g_bn1 = tf.keras.layers.BatchNormalization()
-        # self.g_bn2 = tf.keras.layers.BatchNormalization()
-        # self.g_bn3 = tf.keras.layers.BatchNormalization()
+        # self.g_norm0 = tf.keras.layers.BatchNormalization()
+        # self.g_norm1 = tf.keras.layers.BatchNormalization()
+        # self.g_norm2 = tf.keras.layers.BatchNormalization()
+        # self.g_norm3 = tf.keras.layers.BatchNormalization()
 
         self.g_norm0 = InstanceNormalization()
         self.g_norm1 = InstanceNormalization()
@@ -112,13 +120,17 @@ class Discriminator(tf.keras.Model):
 
         self.d_h0_conv = tf.keras.layers.Conv2D(options['df_dim'],
             kernel_size=5, strides=2, activation=tf.nn.leaky_relu,
-            padding="same")
+            padding="same",
+            kernel_regularizer=tf.keras.regularizers.l1(0.01))
         self.d_h1_conv = tf.keras.layers.Conv2D(options['df_dim']*2,
-            kernel_size=5, strides=2, padding="same")
+            kernel_size=5, strides=2, padding="same",
+            kernel_regularizer=tf.keras.regularizers.l1(0.01))
         self.d_h2_conv = tf.keras.layers.Conv2D(options['df_dim']*4,
-            kernel_size=5, strides=2, padding="same")
+            kernel_size=5, strides=2, padding="same",
+            kernel_regularizer=tf.keras.regularizers.l1(0.01))
         self.d_h3_conv = tf.keras.layers.Conv2D(options['df_dim']*8,
-            kernel_size=5, strides=2, padding="same")
+            kernel_size=5, strides=2, padding="same",
+            kernel_regularizer=tf.keras.regularizers.l1(0.01))
         # self.d_h3_conv_new = tf.keras.layers.Conv2D(options['df_dim']*8,
         #     kernel_size=1, strides=1, padding="same")
 
@@ -127,8 +139,10 @@ class Discriminator(tf.keras.Model):
                             options['embedding_matrix'])
 
         self.flatten = tf.keras.layers.Flatten()
-        self.d_fc1 = tf.keras.layers.Dense(1024)
-        self.d_fc2 = tf.keras.layers.Dense(1)
+        self.d_fc1 = tf.keras.layers.Dense(
+            1024, kernel_regularizer=tf.keras.regularizers.l1(0.01))
+        self.d_fc2 = tf.keras.layers.Dense(
+            1, kernel_regularizer=tf.keras.regularizers.l1(0.01))
 
         # self.d_bn1 = tf.keras.layers.BatchNormalization()
         # self.d_bn2 = tf.keras.layers.BatchNormalization()

@@ -11,6 +11,7 @@ import gensim
 
 import model
 from load_data import read_data_sets
+# from WNAdam import WNAdam
 
 
 def read_wv_model(args):
@@ -64,6 +65,8 @@ def main(args):
         'discriminator': model.Discriminator(model_options),
         'generator_optimizer': tf.train.AdamOptimizer(args.learning_rate),
         'discriminator_optimizer': tf.train.AdamOptimizer(args.learning_rate),
+        # 'generator_optimizer': WNAdam(lr=.1),
+        # 'discriminator_optimizer': WNAdam(lr=.1),
         'step_counter': tf.train.get_or_create_global_step()}
 
     train(args, model_objects, device, dataset)
@@ -159,13 +162,15 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
 
             generator_grad = g.gradient(generator_loss_val,
                                         generator.variables)
+            g_capped_gvs, _ = tf.clip_by_global_norm(generator_grad, 10.)
             discriminator_grad = g.gradient(discriminator_loss_val,
                                             discriminator.variables)
+            d_capped_gvs, _ = tf.clip_by_global_norm(discriminator_grad, 10.)
 
             generator_optimizer.apply_gradients(
-                zip(generator_grad, generator.variables))
+                zip(g_capped_gvs, generator.variables))
             discriminator_optimizer.apply_gradients(
-                zip(discriminator_grad, discriminator.variables))
+                zip(d_capped_gvs, discriminator.variables))
 
             if log_interval and batch_index > 0 \
                     and batch_index % log_interval == 0:
@@ -180,29 +185,42 @@ def discriminator_loss(discriminator_real_outputs,
                        discriminator_wrong_outputs,
                        discriminator_gen_outputs):
 
-    loss_on_real = tf.losses.sigmoid_cross_entropy(
-        tf.ones_like(discriminator_real_outputs),
-        discriminator_real_outputs,
-        label_smoothing=0.25)
+    # loss_on_real = tf.losses.sigmoid_cross_entropy(
+    #     tf.ones_like(discriminator_real_outputs),
+    #     discriminator_real_outputs,
+    #     label_smoothing=0.25)
+    #
+    # loss_on_generated = tf.losses.sigmoid_cross_entropy(
+    #     tf.zeros_like(discriminator_gen_outputs), discriminator_gen_outputs)
+    #
+    # loss_on_wrong = tf.losses.sigmoid_cross_entropy(
+    #     tf.zeros_like(discriminator_wrong_outputs),
+    #     discriminator_wrong_outputs)
 
-    loss_on_generated = tf.losses.sigmoid_cross_entropy(
-        tf.zeros_like(discriminator_gen_outputs), discriminator_gen_outputs)
+    batchsize, _ = discriminator_real_outputs.shape
+    batchsize = tf.cast(batchsize, tf.float32)
+    loss_on_real =\
+        tf.reduce_sum(tf.nn.softplus(-discriminator_real_outputs)) / batchsize
+    loss_on_generated =\
+        tf.reduce_sum(tf.nn.softplus(discriminator_gen_outputs)) / batchsize
+    loss_on_wrong =\
+        tf.reduce_sum(tf.nn.softplus(discriminator_wrong_outputs)) / batchsize
 
-    loss_on_wrong = tf.losses.sigmoid_cross_entropy(
-        tf.zeros_like(discriminator_wrong_outputs),
-        discriminator_wrong_outputs)
-
-    d_loss = loss_on_real + loss_on_generated + loss_on_wrong
+    d_loss = loss_on_real + (loss_on_generated + loss_on_wrong) / 2.
 
     tf.contrib.summary.scalar('discriminator_loss', d_loss)
     return d_loss
 
 
 def generator_loss(discriminator_fake_outputs):
+    batchsize, _ = discriminator_fake_outputs.shape
+    batchsize = tf.cast(batchsize, tf.float32)
+    g_loss =\
+        tf.reduce_sum(tf.nn.softplus(-discriminator_fake_outputs)) / batchsize
 
-    g_loss = tf.losses.sigmoid_cross_entropy(
-        tf.ones_like(discriminator_fake_outputs),
-        discriminator_fake_outputs)
+    # g_loss = tf.losses.sigmoid_cross_entropy(
+    #     tf.ones_like(discriminator_fake_outputs),
+    #     discriminator_fake_outputs)
 
     tf.contrib.summary.scalar('generator_loss', g_loss)
     return g_loss
@@ -214,7 +232,7 @@ if __name__ == '__main__':
                         help='Use GPU')
     parser.add_argument('--rnn_hidden', type=int, default=200,
                         help='Number of nodes in the rnn hidden layer')
-    parser.add_argument('--noise-dim', type=int, default=30,
+    parser.add_argument('--noise-dim', type=int, default=100,
                         help='Noise dimention')
     parser.add_argument('--caption_max_dim', type=int, default=5,
                         help='Word embedding matrix dimension')
@@ -224,8 +242,6 @@ if __name__ == '__main__':
                         help='Text feature dimension')
     parser.add_argument('--batch_size', type=int, default=64,
                         help='Batch Size')
-    parser.add_argument('--image_size', type=int, default=64,
-                        help='Image Size a, a x a')
     parser.add_argument('--gf_dim', type=int, default=64,
                         help='Number of conv in the first layer gen.')
     parser.add_argument('--df_dim', type=int, default=64,

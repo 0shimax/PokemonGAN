@@ -46,7 +46,7 @@ def create_embedding_matrix(args):
     sentences = read_data(args['data_root'], args['image_file_dir'],
                           args['caption_file_name'])
     model = word2vec.Word2Vec(
-        sentences, iter=500, window=3, min_count=1,
+        sentences, iter=100, window=5, min_count=1,
         size=args['vec_dim'], workers=4, seed=555)
 
     # save and reload the model
@@ -75,6 +75,6 @@ if __name__ == '__main__':
         'image_file_dir': 'pokemon_images',
         'caption_file_name': 'pokemon.csv',
         'output_dir': './data/embedding',
-        'vec_dim': 128}
+        'vec_dim': 64}
 
     main(args)
