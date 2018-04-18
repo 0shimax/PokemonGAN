@@ -162,10 +162,10 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
 
             generator_grad = g.gradient(generator_loss_val,
                                         generator.variables)
-            g_capped_gvs, _ = tf.clip_by_global_norm(generator_grad, 10.)
+            g_capped_gvs, _ = tf.clip_by_global_norm(generator_grad, 1.)
             discriminator_grad = g.gradient(discriminator_loss_val,
                                             discriminator.variables)
-            d_capped_gvs, _ = tf.clip_by_global_norm(discriminator_grad, 10.)
+            d_capped_gvs, _ = tf.clip_by_global_norm(discriminator_grad, 5.)
 
             generator_optimizer.apply_gradients(
                 zip(g_capped_gvs, generator.variables))
@@ -230,7 +230,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--no-gpu', action='store_true',
                         help='Use GPU')
-    parser.add_argument('--rnn_hidden', type=int, default=200,
+    parser.add_argument('--rnn_hidden', type=int, default=128,
                         help='Number of nodes in the rnn hidden layer')
     parser.add_argument('--noise-dim', type=int, default=100,
                         help='Noise dimention')
@@ -238,9 +238,9 @@ if __name__ == '__main__':
                         help='Word embedding matrix dimension')
     parser.add_argument('--embedded_size', type=int, default=128,
                         help='Word embedding matrix dimension')
-    parser.add_argument('--rnn_output_dim', type=int, default=128,
+    parser.add_argument('--rnn_output_dim', type=int, default=1,
                         help='Text feature dimension')
-    parser.add_argument('--batch_size', type=int, default=64,
+    parser.add_argument('--batch_size', type=int, default=128,
                         help='Batch Size')
     parser.add_argument('--gf_dim', type=int, default=64,
                         help='Number of conv in the first layer gen.')
@@ -265,7 +265,7 @@ if __name__ == '__main__':
                         help='Momentum for Adam Update')
     parser.add_argument('--epochs', type=int, default=600,
                         help='Max number of epochs')
-    parser.add_argument('--log_interval', type=int, default=5,
+    parser.add_argument('--log_interval', type=int, default=2,
                         help='Log interval')
     args = parser.parse_args()
 

@@ -29,7 +29,7 @@ class BiRNN(tf.keras.Model):
 
         self.word_embeddings = tf.keras.layers.Embedding(
             voc_dim, embedded_size,
-            weights=[embedding_matrix], trainable=False,
+            weights=[embedding_matrix], trainable=True,
             embeddings_regularizer=tf.keras.regularizers.l1(0.01))
         # self.word_embeddings.set_weights([embedding_matrix])
         self.bidirectional = tf.keras.layers.Bidirectional(
