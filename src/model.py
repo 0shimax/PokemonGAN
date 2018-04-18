@@ -45,6 +45,30 @@ class BiRNN(tf.keras.Model):
         return out
 
 
+class RNN(tf.keras.Model):
+    def __init__(self, output_size, embedded_size, n_hidden, voc_dim,
+                 embedding_matrix,
+                 stddev=0.02, bias_start=0.0, dropout_rate=0.5, reuse=None):
+        super().__init__()
+
+        self.word_embeddings = tf.keras.layers.Embedding(
+            voc_dim, embedded_size,
+            weights=[embedding_matrix], trainable=True,
+            embeddings_regularizer=tf.keras.regularizers.l1(0.01))
+
+        self.gru = tf.keras.layers.GRU(
+            n_hidden,
+            kernel_regularizer=tf.keras.regularizers.l1(0.01))
+        self.fc = tf.keras.layers.Dense(
+            output_size, activation=tf.nn.elu,
+            kernel_regularizer=tf.keras.regularizers.l1(0.01))
+
+    def call(self, input_):
+        embedded_word_output = self.word_embeddings(input_)
+        lstm_output = self.gru(embedded_word_output)
+        return self.fc(lstm_output)
+
+
 # GENERATOR IMPLEMENTATION based on:
 #     https://github.com/carpedm20/DCGAN-tensorflow/blob/master/model.py
 class Generator(tf.keras.Model):
@@ -56,9 +80,14 @@ class Generator(tf.keras.Model):
         self.s2, self.s4, self.s8, self.s16 = \
             int(s/2), int(s/4), int(s/8), int(s/16)
 
-        self.bi_rnn = BiRNN(options['rnn_output_dim'], options['embedded_size'],
-                            options['rnn_hidden'], options['voc_dim'],
-                            options['embedding_matrix'])
+        # self.bi_rnn = BiRNN(options['rnn_output_dim'], options['embedded_size'],
+        #                     options['rnn_hidden'], options['voc_dim'],
+        #                     options['embedding_matrix'])
+
+        self.rnn = RNN(options['rnn_output_dim'], options['embedded_size'],
+                       options['rnn_hidden'], options['voc_dim'],
+                       options['embedding_matrix'])
+
         self.g_h0_lin = tf.keras.layers.Dense(
             options['gf_dim']*8*self.s16*self.s16, activation=tf.tanh)
 
@@ -91,7 +120,7 @@ class Generator(tf.keras.Model):
         self.g_norm3 = InstanceNormalization()
 
     def __call__(self, t_z, t_text_embedding):
-        reduced_text_embedding = self.bi_rnn(t_text_embedding)
+        reduced_text_embedding = self.rnn(t_text_embedding)
         z_concat = tf.concat([t_z, reduced_text_embedding], 1)
         z_ = self.g_h0_lin(z_concat)
 
@@ -134,9 +163,13 @@ class Discriminator(tf.keras.Model):
         # self.d_h3_conv_new = tf.keras.layers.Conv2D(options['df_dim']*8,
         #     kernel_size=1, strides=1, padding="same")
 
-        self.bi_rnn = BiRNN(options['rnn_output_dim'], options['embedded_size'],
-                            options['rnn_hidden'], options['voc_dim'],
-                            options['embedding_matrix'])
+        # self.bi_rnn = BiRNN(options['rnn_output_dim'], options['embedded_size'],
+        #                     options['rnn_hidden'], options['voc_dim'],
+        #                     options['embedding_matrix'])
+
+        self.rnn = RNN(options['rnn_output_dim'], options['embedded_size'],
+                       options['rnn_hidden'], options['voc_dim'],
+                       options['embedding_matrix'])
 
         self.flatten = tf.keras.layers.Flatten()
         self.d_fc1 = tf.keras.layers.Dense(
@@ -177,7 +210,7 @@ class Discriminator(tf.keras.Model):
 
         # h3_pooled = self._global_average_pooling(h3)
         h3_flatten = self.flatten(h3)
-        reduced_text_embeddings = self.bi_rnn(t_text_embedding)
+        reduced_text_embeddings = self.rnn(t_text_embedding)
 
         h3_concat = tf.concat([h3_flatten, reduced_text_embeddings], 1)
         hf1 = tf.nn.elu(self.d_norm4(self.d_fc1(h3_concat)))
