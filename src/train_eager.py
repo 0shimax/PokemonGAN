@@ -145,14 +145,16 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
 
                 discriminator_real_outputs =\
                     discriminator(real_images, captions)
-                discriminator_wrong_outputs =\
-                    discriminator(wrong_images, captions)
+                # TODO: wrongも後で入れる
+                # discriminator_wrong_outputs =\
+                #     discriminator(wrong_images, captions)
                 discriminator_gen_outputs =\
                     discriminator(generated_images, captions)
 
+                # TODO: wrongも後で入れる
                 discriminator_loss_val = \
                     discriminator_loss(discriminator_real_outputs,
-                                       discriminator_wrong_outputs,
+                                       # discriminator_wrong_outputs,
                                        discriminator_gen_outputs)
                 total_discriminator_loss += discriminator_loss_val
 
@@ -162,10 +164,10 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
 
             generator_grad = g.gradient(generator_loss_val,
                                         generator.variables)
-            g_capped_gvs, _ = tf.clip_by_global_norm(generator_grad, 1.)
+            g_capped_gvs, _ = tf.clip_by_global_norm(generator_grad, 50.)
             discriminator_grad = g.gradient(discriminator_loss_val,
                                             discriminator.variables)
-            d_capped_gvs, _ = tf.clip_by_global_norm(discriminator_grad, 5.)
+            d_capped_gvs, _ = tf.clip_by_global_norm(discriminator_grad, 50.)
 
             generator_optimizer.apply_gradients(
                 zip(g_capped_gvs, generator.variables))
@@ -181,21 +183,10 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
         batch_index += 1
 
 
+# TODO: wrongも後で入れる
 def discriminator_loss(discriminator_real_outputs,
-                       discriminator_wrong_outputs,
+                       # discriminator_wrong_outputs,
                        discriminator_gen_outputs):
-
-    # loss_on_real = tf.losses.sigmoid_cross_entropy(
-    #     tf.ones_like(discriminator_real_outputs),
-    #     discriminator_real_outputs,
-    #     label_smoothing=0.25)
-    #
-    # loss_on_generated = tf.losses.sigmoid_cross_entropy(
-    #     tf.zeros_like(discriminator_gen_outputs), discriminator_gen_outputs)
-    #
-    # loss_on_wrong = tf.losses.sigmoid_cross_entropy(
-    #     tf.zeros_like(discriminator_wrong_outputs),
-    #     discriminator_wrong_outputs)
 
     batchsize, _ = discriminator_real_outputs.shape
     batchsize = tf.cast(batchsize, tf.float32)
@@ -203,10 +194,11 @@ def discriminator_loss(discriminator_real_outputs,
         tf.reduce_sum(tf.nn.softplus(-discriminator_real_outputs)) / batchsize
     loss_on_generated =\
         tf.reduce_sum(tf.nn.softplus(discriminator_gen_outputs)) / batchsize
-    loss_on_wrong =\
-        tf.reduce_sum(tf.nn.softplus(discriminator_wrong_outputs)) / batchsize
+    # loss_on_wrong =\
+    #     tf.reduce_sum(tf.nn.softplus(discriminator_wrong_outputs)) / batchsize
 
-    d_loss = loss_on_real + (loss_on_generated + loss_on_wrong) / 2.
+    # d_loss = loss_on_real + (loss_on_generated + loss_on_wrong) / 2.
+    d_loss = loss_on_real + loss_on_generated
 
     tf.contrib.summary.scalar('discriminator_loss', d_loss)
     return d_loss
@@ -217,10 +209,6 @@ def generator_loss(discriminator_fake_outputs):
     batchsize = tf.cast(batchsize, tf.float32)
     g_loss =\
         tf.reduce_sum(tf.nn.softplus(-discriminator_fake_outputs)) / batchsize
-
-    # g_loss = tf.losses.sigmoid_cross_entropy(
-    #     tf.ones_like(discriminator_fake_outputs),
-    #     discriminator_fake_outputs)
 
     tf.contrib.summary.scalar('generator_loss', g_loss)
     return g_loss
@@ -238,9 +226,9 @@ if __name__ == '__main__':
                         help='Word embedding matrix dimension')
     parser.add_argument('--embedded_size', type=int, default=128,
                         help='Word embedding matrix dimension')
-    parser.add_argument('--rnn_output_dim', type=int, default=1,
+    parser.add_argument('--rnn_output_dim', type=int, default=64,
                         help='Text feature dimension')
-    parser.add_argument('--batch_size', type=int, default=128,
+    parser.add_argument('--batch_size', type=int, default=32,
                         help='Batch Size')
     parser.add_argument('--gf_dim', type=int, default=64,
                         help='Number of conv in the first layer gen.')

@@ -29,14 +29,11 @@ class BiRNN(tf.keras.Model):
 
         self.word_embeddings = tf.keras.layers.Embedding(
             voc_dim, embedded_size,
-            weights=[embedding_matrix], trainable=True,
-            embeddings_regularizer=tf.keras.regularizers.l1(0.01))
+            weights=[embedding_matrix], trainable=True)
         # self.word_embeddings.set_weights([embedding_matrix])
         self.bidirectional = tf.keras.layers.Bidirectional(
-            tf.keras.layers.GRU(
-                n_hidden, kernel_regularizer=tf.keras.regularizers.l1(0.01)))
-        self.lin = tf.keras.layers.Dense(
-            output_size, kernel_regularizer=tf.keras.regularizers.l1(0.01))
+            tf.keras.layers.GRU(n_hidden))
+        self.lin = tf.keras.layers.Dense(output_size)
 
     def call(self, input_):
         embedded_word_output = self.word_embeddings(input_)
@@ -53,15 +50,10 @@ class RNN(tf.keras.Model):
 
         self.word_embeddings = tf.keras.layers.Embedding(
             voc_dim, embedded_size,
-            weights=[embedding_matrix], trainable=True,
-            embeddings_regularizer=tf.keras.regularizers.l1(0.01))
+            weights=[embedding_matrix], trainable=True)
 
-        self.gru = tf.keras.layers.GRU(
-            n_hidden,
-            kernel_regularizer=tf.keras.regularizers.l1(0.01))
-        self.fc = tf.keras.layers.Dense(
-            output_size, activation=tf.nn.elu,
-            kernel_regularizer=tf.keras.regularizers.l1(0.01))
+        self.gru = tf.keras.layers.GRU(n_hidden)
+        self.fc = tf.keras.layers.Dense(output_size, activation=tf.nn.elu)
 
     def call(self, input_):
         embedded_word_output = self.word_embeddings(input_)
@@ -88,25 +80,28 @@ class Generator(tf.keras.Model):
                        options['rnn_hidden'], options['voc_dim'],
                        options['embedding_matrix'])
 
-        self.g_h0_lin = tf.keras.layers.Dense(
-            options['gf_dim']*8*self.s16*self.s16, activation=tf.tanh)
+        self.g_fc1 = tf.keras.layers.Dense(1024, activation=tf.nn.elu)
+        # if useing depth_to_space, channel size is 3*4*4
+        self.g_fc2 = tf.keras.layers.Dense(options['gf_dim']*4*self.s4*self.s4)
 
-        self.g_h1 = tf.keras.layers.Conv2DTranspose(
-            filters=options['gf_dim']*4, kernel_size=5,
-            strides=2, padding="same",
-            kernel_regularizer=tf.keras.regularizers.l1(0.01))
-        self.g_h2 = tf.keras.layers.Conv2DTranspose(
-            filters=options['gf_dim']*2, kernel_size=5,
-            strides=2, padding="same",
-            kernel_regularizer=tf.keras.regularizers.l1(0.01))
+        # TODO: rewrite to tf.keras.layers.UpSampling2D
+        # self.g_h1 = tf.keras.layers.Conv2DTranspose(
+        #     filters=options['gf_dim']*4, kernel_size=5,
+        #     strides=2, padding="same")
+        # self.g_h2 = tf.keras.layers.Conv2DTranspose(
+        #     filters=options['gf_dim']*2, kernel_size=5,
+        #     strides=2, padding="same")
         self.g_h3 = tf.keras.layers.Conv2DTranspose(
             filters=options['gf_dim'], kernel_size=5,
-            strides=2, padding="same",
-            kernel_regularizer=tf.keras.regularizers.l1(0.01))
+            strides=2, padding="same")
         self.g_h4 = tf.keras.layers.Conv2DTranspose(
             filters=3, kernel_size=5,
             strides=2, padding="same",
-            kernel_regularizer=tf.keras.regularizers.l1(0.01),
+            activation=tf.nn.sigmoid)
+        self.g_conv1 = tf.keras.layers.Conv2D(options['gf_dim'],
+            kernel_size=3, strides=1, padding="same")
+        self.g_conv2 = tf.keras.layers.Conv2D(3,
+            kernel_size=3, strides=1, padding="same",
             activation=tf.nn.sigmoid)
 
         # self.g_norm0 = tf.keras.layers.BatchNormalization()
@@ -120,24 +115,30 @@ class Generator(tf.keras.Model):
         self.g_norm3 = InstanceNormalization()
 
     def __call__(self, t_z, t_text_embedding):
-        reduced_text_embedding = self.rnn(t_text_embedding)
-        z_concat = tf.concat([t_z, reduced_text_embedding], 1)
-        z_ = self.g_h0_lin(z_concat)
+        # reduced_text_embedding = self.rnn(t_text_embedding)
+        # z_concat = tf.concat([t_z, reduced_text_embedding], 1)
+        # z_ = self.g_h0_lin(z_concat)
 
-        h0 = tf.reshape(z_,
-            [-1, self.s16, self.s16, self.options['gf_dim'] * 8])
+        h_z = self.g_fc1(t_z)
+        h_z = self.g_fc2(h_z)
+        h0 = tf.reshape(h_z,
+            [-1, self.s4, self.s4, self.options['gf_dim'] * 4])
 
         h0 = tf.nn.elu(self.g_norm0(h0))
 
-        h1 = self.g_h1(h0)
-        h1 = tf.nn.elu(self.g_norm1(h1))
+        # h1 = self.g_h1(h0)
+        # h1 = tf.nn.elu(self.g_norm1(h1))
+        #
+        # h2 = self.g_h2(h1)
+        # h2 = tf.nn.elu(self.g_norm2(h2))
 
-        h2 = self.g_h2(h1)
-        h2 = tf.nn.elu(self.g_norm2(h2))
+        # h3 = self.g_h3(h0)
 
-        h3 = self.g_h3(h2)
+        h3 = tf.depth_to_space(h0, 2)
+        h3 = self.g_conv1(h3)
         h3 = tf.nn.elu(self.g_norm3(h3))
-        return self.g_h4(h3)
+        # return self.g_h4(h3)
+        return self.g_conv2(tf.depth_to_space(h3, 2))
 
 
 # DISCRIMINATOR IMPLEMENTATION based on :
@@ -148,18 +149,13 @@ class Discriminator(tf.keras.Model):
         self.options = options
 
         self.d_h0_conv = tf.keras.layers.Conv2D(options['df_dim'],
-            kernel_size=5, strides=2, activation=tf.nn.leaky_relu,
-            padding="same",
-            kernel_regularizer=tf.keras.regularizers.l1(0.01))
+            kernel_size=5, strides=2, padding="same")
         self.d_h1_conv = tf.keras.layers.Conv2D(options['df_dim']*2,
-            kernel_size=5, strides=2, padding="same",
-            kernel_regularizer=tf.keras.regularizers.l1(0.01))
+            kernel_size=5, strides=2, padding="same")
         self.d_h2_conv = tf.keras.layers.Conv2D(options['df_dim']*4,
-            kernel_size=5, strides=2, padding="same",
-            kernel_regularizer=tf.keras.regularizers.l1(0.01))
+            kernel_size=5, strides=2, padding="same")
         self.d_h3_conv = tf.keras.layers.Conv2D(options['df_dim']*8,
-            kernel_size=5, strides=2, padding="same",
-            kernel_regularizer=tf.keras.regularizers.l1(0.01))
+            kernel_size=5, strides=2, padding="same")
         # self.d_h3_conv_new = tf.keras.layers.Conv2D(options['df_dim']*8,
         #     kernel_size=1, strides=1, padding="same")
 
@@ -172,16 +168,13 @@ class Discriminator(tf.keras.Model):
                        options['embedding_matrix'])
 
         self.flatten = tf.keras.layers.Flatten()
-        self.d_fc1 = tf.keras.layers.Dense(
-            1024, kernel_regularizer=tf.keras.regularizers.l1(0.01))
-        self.d_fc2 = tf.keras.layers.Dense(
-            1, kernel_regularizer=tf.keras.regularizers.l1(0.01))
+        self.d_fc1 = tf.keras.layers.Dense(1024)
+        self.d_fc2 = tf.keras.layers.Dense(1)
 
-        # self.d_bn1 = tf.keras.layers.BatchNormalization()
-        # self.d_bn2 = tf.keras.layers.BatchNormalization()
-        # self.d_bn3 = tf.keras.layers.BatchNormalization()
-        # self.d_bn4 = tf.keras.layers.BatchNormalization()
-        # self.d_bn5 = tf.keras.layers.BatchNormalization()
+        # self.d_norm1 = tf.keras.layers.BatchNormalization()
+        # self.d_norm2 = tf.keras.layers.BatchNormalization()
+        # self.d_norm3 = tf.keras.layers.BatchNormalization()
+        # self.d_norm4 = tf.keras.layers.BatchNormalization()
 
         self.d_norm1 = InstanceNormalization()
         self.d_norm2 = InstanceNormalization()
@@ -193,27 +186,35 @@ class Discriminator(tf.keras.Model):
             x = tf.reduce_mean(x, axis=1)
         return x
 
-    def _add_noise(self, h, sigma=0.2):
-        return h + sigma * tf.random_normal(h.shape)
+    def _add_noise(self, h, sigma=0.2, training=False):
+        if training:
+            return h + sigma * tf.random_normal(h.shape)
+        else:
+            return h
 
     def __call__(self, image, t_text_embedding, training=True):
         n_batch, _, _, _ = image.shape
-        if training:
-            h = self._add_noise(image)
-        else:
-            h = image
 
-        h0 = self.d_h0_conv(h)  # 32
-        h1 = tf.nn.elu(self.d_norm1(self.d_h1_conv(h0)))  # 16
-        h2 = tf.nn.elu(self.d_norm2(self.d_h2_conv(h1)))  # 8
-        h3 = tf.nn.elu(self.d_norm3(self.d_h3_conv(h2)))  # 4
+        h = self._add_noise(image)
+        h0 = tf.nn.elu(self._add_noise(self.d_h0_conv(h)))  # 32
+        h1 = tf.nn.elu(
+            self._add_noise(self.d_norm1(self.d_h1_conv(h0))))  # 16
+        h2 = tf.nn.elu(
+            self._add_noise(self.d_norm2(self.d_h2_conv(h1))))  # 8
+        h3 = tf.nn.elu(
+            self._add_noise(self.d_norm3(self.d_h3_conv(h2))))  # 4
 
         # h3_pooled = self._global_average_pooling(h3)
         h3_flatten = self.flatten(h3)
-        reduced_text_embeddings = self.rnn(t_text_embedding)
 
-        h3_concat = tf.concat([h3_flatten, reduced_text_embeddings], 1)
-        hf1 = tf.nn.elu(self.d_norm4(self.d_fc1(h3_concat)))
+        # reduced_text_embeddings = self.rnn(t_text_embedding)
+        # h3_concat = tf.concat([h3_flatten, reduced_text_embeddings], 1)
+        # hf1 = tf.nn.leaky_relu(self.d_norm4(self.d_fc1(h3_concat)))
+
+        # hf1 = tf.nn.elu(
+        #     self._add_noise(self.d_norm4(self.d_fc1(h3_flatten))))
+        hf1 = tf.nn.elu(
+            self._add_noise(self.d_fc1(h3_flatten)))
         hf2 = self.d_fc2(hf1)
 
         return hf2

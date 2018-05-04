@@ -1,16 +1,42 @@
+import random
 import tensorflow as tf
 from os import listdir
 from os.path import splitext
 from os.path import isfile, join
 from pathlib import Path
 import pandas as pd
-from skimage.transform import resize
+from skimage.transform import resize, rotate
 from skimage import io
 from skimage.color import rgba2rgb
 from sklearn.model_selection import train_test_split
 from gensim.corpora import Dictionary
+import cv2
+from matplotlib import pyplot as plt
 import numpy
 numpy.random.seed(555)
+random.seed(555)
+
+
+def rotate_and_flip_images(imgs):
+    rotated = numpy.empty_like(imgs, dtype=imgs.dtype)
+
+    for i, img in enumerate(imgs):
+        rotate_angle = random.choice([0., 3., 5., 7., 0., -3., -5., -7.])
+        cols, rows, ch = img.shape
+        rt_img = rotate(img, rotate_angle)
+        # mask = (rt_img[:,:,0]<255) * (rt_img[:,:,1]<255) * (rt_img[:,:,2]<255)
+        # dst1 = cv2.floodFill(rt_img, mask, (0, 0), (255, 255, 255))
+        # dst1 = cv2.floodFill(dst1, mask, (cols, 0), (255, 255, 255))
+        # dst1 = cv2.floodFill(dst1, mask, (0, rows), (255, 255, 255))
+        # dst1 = cv2.floodFill(dst1, mask, (cols, rows), (255, 255, 255))
+        if random.choice([True, False]):
+            rotated[i] = rt_img[::-1, :, :]
+        else:
+            rotated[i] = rt_img
+        # io.imshow(rt_img)
+        # plt.show()
+        # assert False, "test"
+    return rotated
 
 
 class DataSet(tf.data.Dataset):
@@ -70,9 +96,9 @@ class DataSet(tf.data.Dataset):
 
         if self.i_end > self._num_examples:
             wrong_image_idx = wrong_perm[i:]
-            real_images = tf.convert_to_tensor(self._images[i:])
-            wrong_images = tf.convert_to_tensor(self._images[wrong_image_idx])
-            captions = tf.convert_to_tensor(self._captions[i:])
+            real_images = self._images[i:]
+            wrong_images = self._images[wrong_image_idx]
+            captions = self._captions[i:]
 
             # Finished epoch
             self._epochs_completed += 1
@@ -85,12 +111,16 @@ class DataSet(tf.data.Dataset):
             self.current_position = 0
         else:
             wrong_image_idx = wrong_perm[i:self.i_end]
-            real_images = tf.convert_to_tensor(self._images[i:self.i_end])
-            wrong_images = tf.convert_to_tensor(self._images[wrong_image_idx])
-            captions = tf.convert_to_tensor(self._captions[i:self.i_end])
+            real_images = self._images[i:self.i_end]
+            wrong_images = self._images[wrong_image_idx]
+            captions = self._captions[i:self.i_end]
             self.current_position = self.i_end
 
-        return real_images, wrong_images, captions
+        # real_images = rotate_and_flip_images(real_images)
+
+        return (tf.convert_to_tensor(real_images),
+               tf.convert_to_tensor(wrong_images),
+               tf.convert_to_tensor(captions))
 
 
 def get_images_and_captions(image_file_names, image_dir_path,
