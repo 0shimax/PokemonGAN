@@ -80,9 +80,9 @@ class Generator(tf.keras.Model):
                        options['rnn_hidden'], options['voc_dim'],
                        options['embedding_matrix'])
 
-        self.g_fc1 = tf.keras.layers.Dense(1024, activation=tf.nn.elu)
+        self.g_fc1 = tf.keras.layers.Dense(1024)
         # if useing depth_to_space, channel size is 3*4*4
-        self.g_fc2 = tf.keras.layers.Dense(options['gf_dim']*4*self.s4*self.s4)
+        self.g_fc2 = tf.keras.layers.Dense(options['gf_dim']*8*self.s4*self.s4)
 
         # TODO: rewrite to tf.keras.layers.UpSampling2D
         # self.g_h1 = tf.keras.layers.Conv2DTranspose(
@@ -119,12 +119,12 @@ class Generator(tf.keras.Model):
         # z_concat = tf.concat([t_z, reduced_text_embedding], 1)
         # z_ = self.g_h0_lin(z_concat)
 
-        h_z = self.g_fc1(t_z)
+        h_z = tf.nn.elu(self.g_norm0(self.g_fc1(t_z)))
         h_z = self.g_fc2(h_z)
         h0 = tf.reshape(h_z,
-            [-1, self.s4, self.s4, self.options['gf_dim'] * 4])
+            [-1, self.s4, self.s4, self.options['gf_dim'] * 8])
 
-        h0 = tf.nn.elu(self.g_norm0(h0))
+        h0 = tf.nn.elu(self.g_norm1(h0))
 
         # h1 = self.g_h1(h0)
         # h1 = tf.nn.elu(self.g_norm1(h1))
@@ -196,13 +196,17 @@ class Discriminator(tf.keras.Model):
         n_batch, _, _, _ = image.shape
 
         h = self._add_noise(image)
-        h0 = tf.nn.elu(self._add_noise(self.d_h0_conv(h)))  # 32
+        h0 = tf.nn.elu(self._add_noise(self.d_h0_conv(h),
+                                       training=training))  # 32
         h1 = tf.nn.elu(
-            self._add_noise(self.d_norm1(self.d_h1_conv(h0))))  # 16
+            self._add_noise(self.d_norm1(self.d_h1_conv(h0)),
+                            training=training))  # 16
         h2 = tf.nn.elu(
-            self._add_noise(self.d_norm2(self.d_h2_conv(h1))))  # 8
+            self._add_noise(self.d_norm2(self.d_h2_conv(h1)),
+                            training=training))  # 8
         h3 = tf.nn.elu(
-            self._add_noise(self.d_norm3(self.d_h3_conv(h2))))  # 4
+            self._add_noise(self.d_norm3(self.d_h3_conv(h2)),
+                            training=training))  # 4
 
         # h3_pooled = self._global_average_pooling(h3)
         h3_flatten = self.flatten(h3)
@@ -214,7 +218,8 @@ class Discriminator(tf.keras.Model):
         # hf1 = tf.nn.elu(
         #     self._add_noise(self.d_norm4(self.d_fc1(h3_flatten))))
         hf1 = tf.nn.elu(
-            self._add_noise(self.d_fc1(h3_flatten)))
+            self._add_noise(self.d_norm3(self.d_fc1(h3_flatten)),
+                            training=training))
         hf2 = self.d_fc2(hf1)
 
         return hf2

@@ -191,11 +191,11 @@ def discriminator_loss(discriminator_real_outputs,
     batchsize, _ = discriminator_real_outputs.shape
     batchsize = tf.cast(batchsize, tf.float32)
     loss_on_real =\
-        tf.reduce_sum(tf.nn.softplus(-discriminator_real_outputs)) / batchsize
+        tf.reduce_sum(tf.nn.softplus(-discriminator_real_outputs))
     loss_on_generated =\
-        tf.reduce_sum(tf.nn.softplus(discriminator_gen_outputs)) / batchsize
+        tf.reduce_sum(tf.nn.softplus(discriminator_gen_outputs))
     # loss_on_wrong =\
-    #     tf.reduce_sum(tf.nn.softplus(discriminator_wrong_outputs)) / batchsize
+    #     tf.reduce_sum(tf.nn.softplus(discriminator_wrong_outputs))
 
     # d_loss = loss_on_real + (loss_on_generated + loss_on_wrong) / 2.
     d_loss = loss_on_real + loss_on_generated
@@ -208,7 +208,7 @@ def generator_loss(discriminator_fake_outputs):
     batchsize, _ = discriminator_fake_outputs.shape
     batchsize = tf.cast(batchsize, tf.float32)
     g_loss =\
-        tf.reduce_sum(tf.nn.softplus(-discriminator_fake_outputs)) / batchsize
+        tf.reduce_sum(tf.nn.softplus(-discriminator_fake_outputs))
 
     tf.contrib.summary.scalar('generator_loss', g_loss)
     return g_loss
