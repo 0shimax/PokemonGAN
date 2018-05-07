@@ -1,5 +1,6 @@
 import random
 import tensorflow as tf
+import os
 from os import listdir
 from os.path import splitext
 from os.path import isfile, join
@@ -15,6 +16,10 @@ from matplotlib import pyplot as plt
 import numpy
 numpy.random.seed(555)
 random.seed(555)
+
+
+HEIGHT, WIDTH, CHANNEL = 64, 64, 3
+BATCH_SIZE = 64
 
 
 def rotate_and_flip_images(imgs):
@@ -200,3 +205,44 @@ def caption_to_one_hot(captions, wv_model):
         [[wv_model.wv.vocab[word].index for word in words]
             for words in captions])
     return one_hot_matrix, len(vocab.keys())
+
+
+def process_data():
+    current_dir = os.getcwd()
+    # parent = os.path.dirname(current_dir)
+    pokemon_dir = os.path.join(current_dir, 'data', 'pokemon_images')
+    images = []
+    for each in os.listdir(pokemon_dir):
+        images.append(os.path.join(pokemon_dir,each))
+    # print images
+    all_images = tf.convert_to_tensor(images, dtype = tf.string)
+
+    images_queue = tf.train.slice_input_producer(
+                                        [all_images])
+
+    content = tf.read_file(images_queue[0])
+    image = tf.image.decode_jpeg(content, channels = CHANNEL)
+    # sess1 = tf.Session()
+    # print sess1.run(image)
+    image = tf.image.random_flip_left_right(image)
+    image = tf.image.random_brightness(image, max_delta = 0.1)
+    image = tf.image.random_contrast(image, lower = 0.9, upper = 1.1)
+    # noise = tf.Variable(tf.truncated_normal(shape = [HEIGHT,WIDTH,CHANNEL], dtype = tf.float32, stddev = 1e-3, name = 'noise'))
+    # print image.get_shape()
+    size = [HEIGHT, WIDTH]
+    image = tf.image.resize_images(image, size)
+    image.set_shape([HEIGHT,WIDTH,CHANNEL])
+    # image = image + noise
+    # image = tf.transpose(image, perm=[2, 0, 1])
+    # print image.get_shape()
+
+    image = tf.cast(image, tf.float32)
+    image = image / 255.0
+
+    iamges_batch = tf.train.shuffle_batch(
+                                    [image], batch_size = BATCH_SIZE,
+                                    num_threads = 4, capacity = 200 + 3* BATCH_SIZE,
+                                    min_after_dequeue = 200)
+    num_images = len(images)
+
+    return iamges_batch, num_images

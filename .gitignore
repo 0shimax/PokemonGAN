@@ -2,6 +2,8 @@ data/
 .tags
 results/
 __MACOSX
+model/
+newPokemon/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
