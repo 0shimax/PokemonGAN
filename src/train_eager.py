@@ -142,8 +142,17 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
                 generated_images = generator(noise, captions)
                 tf.contrib.summary.image(
                     'generated_images',
-                    generated_images * 255,
+                    (generated_images / 2. + 0.5) * 255,
+                    # generated_images * 255,
                     max_images=300)
+
+                g_mean, g_var = tf.nn.moments(generated_images, axes=[0])
+                d_mean, d_var = tf.nn.moments(real_images, axes=[0])
+
+                mean_diff = tf.reduce_sum(tf.abs(g_mean - d_mean))
+                var_diff = tf.reduce_sum(tf.abs(g_var - d_var))
+                mean_diff = mean_diff * 0.001
+                var_diff = var_diff * 0.001
 
                 discriminator_real_outputs =\
                     discriminator(real_images, captions)
@@ -161,7 +170,7 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
                 total_discriminator_loss += discriminator_loss_val
 
                 generator_loss_val = generator_loss(discriminator_gen_outputs)
-
+                generator_loss_val += mean_diff + var_diff
                 total_generator_loss += generator_loss_val
 
             generator_grad = g.gradient(generator_loss_val,
@@ -192,12 +201,19 @@ def discriminator_loss(discriminator_real_outputs,
 
     batchsize, _ = discriminator_real_outputs.shape
     batchsize = tf.cast(batchsize, tf.float32)
-    loss_on_real =\
-        tf.reduce_sum(tf.nn.softplus(-discriminator_real_outputs))
-    loss_on_generated =\
-        tf.reduce_sum(tf.nn.softplus(discriminator_gen_outputs))
+    # loss_on_real =\
+    #     tf.reduce_sum(tf.nn.softplus(-discriminator_real_outputs))
+    # loss_on_generated =\
+    #     tf.reduce_sum(tf.nn.softplus(discriminator_gen_outputs))
     # loss_on_wrong =\
     #     tf.reduce_sum(tf.nn.softplus(discriminator_wrong_outputs))
+
+    loss_on_real =\
+        tf.losses.softmax_cross_entropy(
+            tf.ones_like(discriminator_real_outputs), discriminator_real_outputs)
+    loss_on_generated =\
+        tf.losses.softmax_cross_entropy(
+            tf.zeros_like(discriminator_gen_outputs), discriminator_gen_outputs)
 
     # d_loss = loss_on_real + (loss_on_generated + loss_on_wrong) / 2.
     d_loss = loss_on_real + loss_on_generated
@@ -209,8 +225,11 @@ def discriminator_loss(discriminator_real_outputs,
 def generator_loss(discriminator_fake_outputs):
     batchsize, _ = discriminator_fake_outputs.shape
     batchsize = tf.cast(batchsize, tf.float32)
+    # g_loss =\
+    #     tf.reduce_sum(tf.nn.softplus(-discriminator_fake_outputs))
     g_loss =\
-        tf.reduce_sum(tf.nn.softplus(-discriminator_fake_outputs))
+        tf.losses.softmax_cross_entropy(
+            tf.ones_like(discriminator_fake_outputs), discriminator_fake_outputs)
 
     tf.contrib.summary.scalar('generator_loss', g_loss)
     return g_loss
@@ -253,7 +272,7 @@ if __name__ == '__main__':
                         help='Learning Rate')
     parser.add_argument('--beta1', type=float, default=0.5,
                         help='Momentum for Adam Update')
-    parser.add_argument('--epochs', type=int, default=600,
+    parser.add_argument('--epochs', type=int, default=1500,
                         help='Max number of epochs')
     parser.add_argument('--log_interval', type=int, default=2,
                         help='Log interval')

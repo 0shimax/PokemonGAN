@@ -97,12 +97,12 @@ class Generator(tf.keras.Model):
         self.g_h4 = tf.keras.layers.Conv2DTranspose(
             filters=3, kernel_size=5,
             strides=2, padding="same",
-            activation=tf.nn.sigmoid)
+            activation=tf.nn.tanh)
         self.g_conv1 = tf.keras.layers.Conv2D(options['gf_dim'],
             kernel_size=3, strides=1, padding="same")
         self.g_conv2 = tf.keras.layers.Conv2D(3,
             kernel_size=3, strides=1, padding="same",
-            activation=tf.nn.sigmoid)
+            activation=tf.nn.tanh)
 
         self.g_norm0 = tf.keras.layers.BatchNormalization()
         self.g_norm1 = tf.keras.layers.BatchNormalization()

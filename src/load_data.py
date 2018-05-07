@@ -21,18 +21,18 @@ def rotate_and_flip_images(imgs):
     rotated = numpy.empty_like(imgs, dtype=imgs.dtype)
 
     for i, img in enumerate(imgs):
-        rotate_angle = random.choice([0., 3., 5., 7., 0., -3., -5., -7.])
-        cols, rows, ch = img.shape
-        rt_img = rotate(img, rotate_angle)
+        # rotate_angle = random.choice([0., 3., 5., 7., 0., -3., -5., -7.])
+        # cols, rows, ch = img.shape
+        # rt_img = rotate(img, rotate_angle)
         # mask = (rt_img[:,:,0]<255) * (rt_img[:,:,1]<255) * (rt_img[:,:,2]<255)
         # dst1 = cv2.floodFill(rt_img, mask, (0, 0), (255, 255, 255))
         # dst1 = cv2.floodFill(dst1, mask, (cols, 0), (255, 255, 255))
         # dst1 = cv2.floodFill(dst1, mask, (0, rows), (255, 255, 255))
         # dst1 = cv2.floodFill(dst1, mask, (cols, rows), (255, 255, 255))
         if random.choice([True, False]):
-            rotated[i] = rt_img[::-1, :, :]
+            rotated[i] = img[::-1, :, :]
         else:
-            rotated[i] = rt_img
+            rotated[i] = img
         # io.imshow(rt_img)
         # plt.show()
         # assert False, "test"
@@ -55,7 +55,7 @@ class DataSet(tf.data.Dataset):
         # to [num examples, rows*columns] (assuming depth == 1)
         assert images.shape[3] == 3
         images = images.astype(numpy.float32)
-        images = numpy.multiply(images, 1.0 / 255.0)
+        images = ((images / 255.) - 0.5) * 2
 
         self._images = images
         self._captions = captions
