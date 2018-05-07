@@ -116,7 +116,7 @@ class DataSet(tf.data.Dataset):
             captions = self._captions[i:self.i_end]
             self.current_position = self.i_end
 
-        # real_images = rotate_and_flip_images(real_images)
+        real_images = rotate_and_flip_images(real_images)
 
         return (tf.convert_to_tensor(real_images),
                tf.convert_to_tensor(wrong_images),

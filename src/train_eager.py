@@ -96,7 +96,9 @@ def train(args, model_objects, device, dataset):
                                 noise_dim=args.noise_dim)
 
             end = time.time()
-            checkpoint.save(checkpoint_prefix)
+            if i_epoch % 20 == 0:
+                checkpoint.save(checkpoint_prefix)
+
             print('\nTrain time for epoch #%d (step %d): %f' %
                   (checkpoint.save_counter.numpy(),
                    checkpoint.step_counter.numpy(),
@@ -128,7 +130,7 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
             tf.assign_add(step_counter, 1)
 
         with tf.contrib.summary.record_summaries_every_n_global_steps(
-            args.log_interval, global_step=step_counter):
+                args.log_interval, global_step=step_counter):
             current_batch_size = real_images.shape[0]
             noise = tf.random_uniform(
                 shape=[current_batch_size, noise_dim],
@@ -164,10 +166,10 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
 
             generator_grad = g.gradient(generator_loss_val,
                                         generator.variables)
-            g_capped_gvs, _ = tf.clip_by_global_norm(generator_grad, 50.)
+            g_capped_gvs, _ = tf.clip_by_global_norm(generator_grad, 100.)
             discriminator_grad = g.gradient(discriminator_loss_val,
                                             discriminator.variables)
-            d_capped_gvs, _ = tf.clip_by_global_norm(discriminator_grad, 50.)
+            d_capped_gvs, _ = tf.clip_by_global_norm(discriminator_grad, 100.)
 
             generator_optimizer.apply_gradients(
                 zip(g_capped_gvs, generator.variables))

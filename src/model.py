@@ -82,7 +82,7 @@ class Generator(tf.keras.Model):
 
         self.g_fc1 = tf.keras.layers.Dense(1024)
         # if useing depth_to_space, channel size is 3*4*4
-        self.g_fc2 = tf.keras.layers.Dense(options['gf_dim']*8*self.s4*self.s4)
+        self.g_fc2 = tf.keras.layers.Dense(options['gf_dim']*2*self.s4*self.s4)
 
         # TODO: rewrite to tf.keras.layers.UpSampling2D
         # self.g_h1 = tf.keras.layers.Conv2DTranspose(
@@ -104,15 +104,15 @@ class Generator(tf.keras.Model):
             kernel_size=3, strides=1, padding="same",
             activation=tf.nn.sigmoid)
 
-        # self.g_norm0 = tf.keras.layers.BatchNormalization()
-        # self.g_norm1 = tf.keras.layers.BatchNormalization()
-        # self.g_norm2 = tf.keras.layers.BatchNormalization()
-        # self.g_norm3 = tf.keras.layers.BatchNormalization()
+        self.g_norm0 = tf.keras.layers.BatchNormalization()
+        self.g_norm1 = tf.keras.layers.BatchNormalization()
+        self.g_norm2 = tf.keras.layers.BatchNormalization()
+        self.g_norm3 = tf.keras.layers.BatchNormalization()
 
-        self.g_norm0 = InstanceNormalization()
-        self.g_norm1 = InstanceNormalization()
-        self.g_norm2 = InstanceNormalization()
-        self.g_norm3 = InstanceNormalization()
+        # self.g_norm0 = InstanceNormalization()
+        # self.g_norm1 = InstanceNormalization()
+        # self.g_norm2 = InstanceNormalization()
+        # self.g_norm3 = InstanceNormalization()
 
     def __call__(self, t_z, t_text_embedding):
         # reduced_text_embedding = self.rnn(t_text_embedding)
@@ -122,7 +122,7 @@ class Generator(tf.keras.Model):
         h_z = tf.nn.elu(self.g_norm0(self.g_fc1(t_z)))
         h_z = self.g_fc2(h_z)
         h0 = tf.reshape(h_z,
-            [-1, self.s4, self.s4, self.options['gf_dim'] * 8])
+            [-1, self.s4, self.s4, self.options['gf_dim'] * 2])
 
         h0 = tf.nn.elu(self.g_norm1(h0))
 
@@ -132,13 +132,13 @@ class Generator(tf.keras.Model):
         # h2 = self.g_h2(h1)
         # h2 = tf.nn.elu(self.g_norm2(h2))
 
-        # h3 = self.g_h3(h0)
+        h3 = tf.nn.elu(self.g_norm3(self.g_h3(h0)))
+        return self.g_h4(h3)
 
-        h3 = tf.depth_to_space(h0, 2)
-        h3 = self.g_conv1(h3)
-        h3 = tf.nn.elu(self.g_norm3(h3))
-        # return self.g_h4(h3)
-        return self.g_conv2(tf.depth_to_space(h3, 2))
+        # h3 = tf.depth_to_space(h0, 2)
+        # h3 = self.g_conv1(h3)
+        # h3 = tf.nn.elu(self.g_norm3(h3))
+        # return self.g_conv2(tf.depth_to_space(h3, 2))
 
 
 # DISCRIMINATOR IMPLEMENTATION based on :
@@ -171,13 +171,13 @@ class Discriminator(tf.keras.Model):
         self.d_fc1 = tf.keras.layers.Dense(1024)
         self.d_fc2 = tf.keras.layers.Dense(1)
 
-        # self.d_norm1 = tf.keras.layers.BatchNormalization()
-        # self.d_norm2 = tf.keras.layers.BatchNormalization()
+        self.d_norm1 = tf.keras.layers.BatchNormalization()
+        self.d_norm2 = tf.keras.layers.BatchNormalization()
         # self.d_norm3 = tf.keras.layers.BatchNormalization()
         # self.d_norm4 = tf.keras.layers.BatchNormalization()
 
-        self.d_norm1 = InstanceNormalization()
-        self.d_norm2 = InstanceNormalization()
+        # self.d_norm1 = InstanceNormalization()
+        # self.d_norm2 = InstanceNormalization()
         self.d_norm3 = InstanceNormalization()
         self.d_norm4 = InstanceNormalization()
 
@@ -218,8 +218,7 @@ class Discriminator(tf.keras.Model):
         # hf1 = tf.nn.elu(
         #     self._add_noise(self.d_norm4(self.d_fc1(h3_flatten))))
         hf1 = tf.nn.elu(
-            self._add_noise(self.d_norm3(self.d_fc1(h3_flatten)),
-                            training=training))
+            self._add_noise(self.d_fc1(h3_flatten), training=training))
         hf2 = self.d_fc2(hf1)
 
         return hf2
