@@ -55,7 +55,8 @@ class DataSet(tf.data.Dataset):
         # to [num examples, rows*columns] (assuming depth == 1)
         assert images.shape[3] == 3
         images = images.astype(numpy.float32)
-        images = ((images / 255.) - 0.5) * 2
+        # images = ((images / 255.) - 0.5) * 2
+        images /= 255.
 
         self._images = images
         self._captions = captions
