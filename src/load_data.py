@@ -17,26 +17,22 @@ numpy.random.seed(555)
 random.seed(555)
 
 
-def rotate_and_flip_images(imgs):
+def argment_images(imgs):
     rotated = numpy.empty_like(imgs, dtype=imgs.dtype)
 
     for i, img in enumerate(imgs):
-        # rotate_angle = random.choice([0., 3., 5., 7., 0., -3., -5., -7.])
-        # cols, rows, ch = img.shape
-        # rt_img = rotate(img, rotate_angle)
-        # mask = (rt_img[:,:,0]<255) * (rt_img[:,:,1]<255) * (rt_img[:,:,2]<255)
-        # dst1 = cv2.floodFill(rt_img, mask, (0, 0), (255, 255, 255))
-        # dst1 = cv2.floodFill(dst1, mask, (cols, 0), (255, 255, 255))
-        # dst1 = cv2.floodFill(dst1, mask, (0, rows), (255, 255, 255))
-        # dst1 = cv2.floodFill(dst1, mask, (cols, rows), (255, 255, 255))
+        # img = tf.convert_to_tensor(img)
         if random.choice([True, False]):
-            rotated[i] = img[::-1, :, :]
-        else:
-            rotated[i] = img
+            img = tf.image.random_flip_left_right(img)
+        if random.choice([True, False]):
+            img = tf.image.random_brightness(img, max_delta=0.1)
+        if random.choice([True, False]):
+            img = tf.image.random_contrast(img, lower=0.9, upper=1.1)
+        rotated[i] = img
         # io.imshow(rt_img)
         # plt.show()
         # assert False, "test"
-    return rotated
+    return tf.convert_to_tensor(rotated)
 
 
 class DataSet(tf.data.Dataset):
@@ -117,11 +113,11 @@ class DataSet(tf.data.Dataset):
             captions = self._captions[i:self.i_end]
             self.current_position = self.i_end
 
-        real_images = rotate_and_flip_images(real_images)
+        real_images = argment_images(real_images)
 
-        return (tf.convert_to_tensor(real_images),
-               tf.convert_to_tensor(wrong_images),
-               tf.convert_to_tensor(captions))
+        return (real_images,
+                tf.convert_to_tensor(wrong_images),
+                tf.convert_to_tensor(captions))
 
 
 def get_images_and_captions(image_file_names, image_dir_path,

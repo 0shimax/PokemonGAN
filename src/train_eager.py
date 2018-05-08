@@ -63,10 +63,8 @@ def main(args):
     model_objects = {
         'generator': model.Generator(model_options),
         'discriminator': model.Discriminator(model_options),
-        'generator_optimizer': tf.train.AdamOptimizer(args.learning_rate),
-        'discriminator_optimizer': tf.train.AdamOptimizer(args.learning_rate),
-        # 'generator_optimizer': WNAdam(lr=.1),
-        # 'discriminator_optimizer': WNAdam(lr=.1),
+        'generator_optimizer': tf.train.RMSPropOptimizer(learning_rate=2e-4),
+        'discriminator_optimizer': tf.train.RMSPropOptimizer(learning_rate=2e-4),
         'step_counter': tf.train.get_or_create_global_step()}
 
     train(args, model_objects, device, dataset)
@@ -96,7 +94,7 @@ def train(args, model_objects, device, dataset):
                                 noise_dim=args.noise_dim)
 
             end = time.time()
-            if i_epoch % 20 == 0:
+            if i_epoch % 50 == 0:
                 checkpoint.save(checkpoint_prefix)
 
             print('\nTrain time for epoch #%d (step %d): %f' %
@@ -146,14 +144,6 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
                     generated_images * 255,
                     max_images=300)
 
-                g_mean, g_var = tf.nn.moments(generated_images, axes=[0])
-                d_mean, d_var = tf.nn.moments(real_images, axes=[0])
-
-                mean_diff = tf.reduce_sum(tf.abs(g_mean - d_mean))
-                var_diff = tf.reduce_sum(tf.abs(g_var - d_var))
-                mean_diff = mean_diff  * 0.1
-                var_diff = var_diff  * 0.1
-
                 discriminator_real_outputs =\
                     discriminator(real_images, captions)
                 # TODO: wrongも後で入れる
@@ -170,20 +160,25 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
                 total_discriminator_loss += discriminator_loss_val
 
                 generator_loss_val = generator_loss(discriminator_gen_outputs)
-                generator_loss_val += mean_diff + var_diff
                 total_generator_loss += generator_loss_val
 
             generator_grad = g.gradient(generator_loss_val,
                                         generator.variables)
-            g_capped_gvs, _ = tf.clip_by_global_norm(generator_grad, 100.)
+            # g_capped_gvs, _ = tf.clip_by_global_norm(generator_grad, 100.)
             discriminator_grad = g.gradient(discriminator_loss_val,
                                             discriminator.variables)
-            d_capped_gvs, _ = tf.clip_by_global_norm(discriminator_grad, 100.)
+            # d_capped_gvs, _ = tf.clip_by_global_norm(discriminator_grad, 100.)
 
             generator_optimizer.apply_gradients(
-                zip(g_capped_gvs, generator.variables))
+                zip(generator_grad, generator.variables))
             discriminator_optimizer.apply_gradients(
-                zip(d_capped_gvs, discriminator.variables))
+                zip(discriminator_grad, discriminator.variables))
+
+            discriminator.discriminator_variables = discriminator.variables
+            tf.contrib.gan.features.clip_discriminator_weights(
+                discriminator_optimizer,
+                discriminator,
+                0.01)
 
             if log_interval and batch_index > 0 \
                     and batch_index % log_interval == 0:
@@ -199,12 +194,17 @@ def discriminator_loss(discriminator_real_outputs,
                        # discriminator_wrong_outputs,
                        discriminator_gen_outputs):
 
-    batchsize, _ = discriminator_real_outputs.shape
-    batchsize = tf.cast(batchsize, tf.float32)
-    loss_on_real =\
-        tf.reduce_sum(tf.nn.softplus(-discriminator_real_outputs))
-    loss_on_generated =\
-        tf.reduce_sum(tf.nn.softplus(discriminator_gen_outputs))
+    loss_on_generated = tf.reduce_mean(discriminator_gen_outputs)
+    loss_on_real = -tf.reduce_mean(discriminator_real_outputs)
+
+    # batchsize, _ = discriminator_real_outputs.shape
+    # batchsize = tf.cast(batchsize, tf.float32)
+
+
+    # loss_on_real =\
+    #     tf.reduce_sum(tf.nn.softplus(-discriminator_real_outputs))
+    # loss_on_generated =\
+    #     tf.reduce_sum(tf.nn.softplus(discriminator_gen_outputs))
     # loss_on_wrong =\
     #     tf.reduce_sum(tf.nn.softplus(discriminator_wrong_outputs))
 
@@ -223,10 +223,12 @@ def discriminator_loss(discriminator_real_outputs,
 
 
 def generator_loss(discriminator_fake_outputs):
-    batchsize, _ = discriminator_fake_outputs.shape
-    batchsize = tf.cast(batchsize, tf.float32)
-    g_loss =\
-        tf.reduce_sum(tf.nn.softplus(-discriminator_fake_outputs))
+    g_loss = -tf.reduce_mean(discriminator_fake_outputs)
+
+    # batchsize, _ = discriminator_fake_outputs.shape
+    # batchsize = tf.cast(batchsize, tf.float32)
+    # g_loss =\
+    #     tf.reduce_sum(tf.nn.softplus(-discriminator_fake_outputs))
     # g_loss =\
     #     tf.losses.softmax_cross_entropy(
     #         tf.ones_like(discriminator_fake_outputs), discriminator_fake_outputs)
@@ -249,7 +251,7 @@ if __name__ == '__main__':
                         help='Word embedding matrix dimension')
     parser.add_argument('--rnn_output_dim', type=int, default=64,
                         help='Text feature dimension')
-    parser.add_argument('--batch_size', type=int, default=32,
+    parser.add_argument('--batch_size', type=int, default=64,
                         help='Batch Size')
     parser.add_argument('--gf_dim', type=int, default=64,
                         help='Number of conv in the first layer gen.')
@@ -272,7 +274,7 @@ if __name__ == '__main__':
                         help='Learning Rate')
     parser.add_argument('--beta1', type=float, default=0.5,
                         help='Momentum for Adam Update')
-    parser.add_argument('--epochs', type=int, default=1500,
+    parser.add_argument('--epochs', type=int, default=5000,
                         help='Max number of epochs')
     parser.add_argument('--log_interval', type=int, default=2,
                         help='Log interval')

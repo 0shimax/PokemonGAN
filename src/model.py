@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 
 
 class InstanceNormalization(tf.keras.Model):
@@ -68,9 +69,11 @@ class Generator(tf.keras.Model):
         super().__init__()
         self.options = options
 
-        s = options['image_size']
-        self.s2, self.s4, self.s8, self.s16 = \
-            int(s/2), int(s/4), int(s/8), int(s/16)
+        self.c4, self.c8, self.c16, self.c32, self.c64 = 512, 256, 128, 64, 32
+        self.s4 = 4
+        # s = options['image_size']
+        # self.s2, self.s4, self.s8, self.s16 = \
+        #     int(s/2), int(s/4), int(s/8), int(s/16)
 
         # self.bi_rnn = BiRNN(options['rnn_output_dim'], options['embedded_size'],
         #                     options['rnn_hidden'], options['voc_dim'],
@@ -80,84 +83,82 @@ class Generator(tf.keras.Model):
                        options['rnn_hidden'], options['voc_dim'],
                        options['embedding_matrix'])
 
-        self.g_fc1 = tf.keras.layers.Dense(1024, activation=tf.nn.elu)
-        # if useing depth_to_space, channel size is 3*4*4
-        self.g_fc2 = tf.keras.layers.Dense(options['gf_dim']*4*self.s4*self.s4)
-
-        # TODO: rewrite to tf.keras.layers.UpSampling2D
-        # self.g_h1 = tf.keras.layers.Conv2DTranspose(
-        #     filters=options['gf_dim']*4, kernel_size=5,
-        #     strides=2, padding="same")
-        # self.g_h2 = tf.keras.layers.Conv2DTranspose(
-        #     filters=options['gf_dim']*2, kernel_size=5,
-        #     strides=2, padding="same")
+        self.g_fc1 = tf.keras.layers.Dense(
+            self.s4 * self.s4 * self.c4,
+            kernel_initializer=tf.truncated_normal_initializer(stddev=0.02))
+        self.g_h1 = tf.keras.layers.Conv2DTranspose(
+            filters=self.c8, kernel_size=5,
+            kernel_initializer=tf.truncated_normal_initializer(stddev=0.02),
+            strides=2, padding="same")
+        self.g_h2 = tf.keras.layers.Conv2DTranspose(
+            filters=self.c16, kernel_size=5,
+            kernel_initializer=tf.truncated_normal_initializer(stddev=0.02),
+            strides=2, padding="same")
         self.g_h3 = tf.keras.layers.Conv2DTranspose(
-            filters=options['gf_dim'], kernel_size=5,
+            filters=self.c32, kernel_size=5,
+            kernel_initializer=tf.truncated_normal_initializer(stddev=0.02),
             strides=2, padding="same")
         self.g_h4 = tf.keras.layers.Conv2DTranspose(
             filters=3, kernel_size=5,
-            strides=2, padding="same",
-            activation=tf.nn.sigmoid)
-        self.g_conv1 = tf.keras.layers.Conv2D(options['gf_dim'],
-            kernel_size=3, strides=1, padding="same")
-        self.g_conv2 = tf.keras.layers.Conv2D(3,
-            kernel_size=3, strides=1, padding="same",
-            activation=tf.nn.sigmoid)
+            kernel_initializer=tf.truncated_normal_initializer(stddev=0.02),
+            strides=2, padding="same")
 
-        # self.g_norm0 = tf.keras.layers.BatchNormalization()
-        # self.g_norm1 = tf.keras.layers.BatchNormalization()
-        # self.g_norm2 = tf.keras.layers.BatchNormalization()
-        # self.g_norm3 = tf.keras.layers.BatchNormalization()
-
-        self.g_norm0 = InstanceNormalization()
-        self.g_norm1 = InstanceNormalization()
-        self.g_norm2 = InstanceNormalization()
-        self.g_norm3 = InstanceNormalization()
-
-    def __call__(self, t_z, t_text_embedding):
+    def __call__(self, t_z, t_text_embedding, is_train=True):
         # reduced_text_embedding = self.rnn(t_text_embedding)
         # z_concat = tf.concat([t_z, reduced_text_embedding], 1)
         # z_ = self.g_h0_lin(z_concat)
 
         h_z = self.g_fc1(t_z)
-        h_z = self.g_fc2(h_z)
-        h0 = tf.reshape(h_z,
-            [-1, self.s4, self.s4, self.options['gf_dim'] * 4])
+        h0 = tf.reshape(h_z, [-1, self.s4, self.s4, self.c4])
+        h0 = tf.contrib.layers.batch_norm(h0, is_training=is_train,
+                                          epsilon=1e-5, decay=0.9,
+                                          updates_collections=None)
+        h0 = tf.nn.relu(h0)
 
-        h0 = tf.nn.elu(self.g_norm0(h0))
+        h1 = self.g_h1(h0)
+        h1 = tf.contrib.layers.batch_norm(h1, is_training=is_train,
+                                          epsilon=1e-5, decay=0.9,
+                                          updates_collections=None)
+        h1 = tf.nn.relu(h1)
 
-        # h1 = self.g_h1(h0)
-        # h1 = tf.nn.elu(self.g_norm1(h1))
-        #
-        # h2 = self.g_h2(h1)
-        # h2 = tf.nn.elu(self.g_norm2(h2))
+        h2 = self.g_h2(h1)
+        h2 = tf.contrib.layers.batch_norm(h2, is_training=is_train,
+                                          epsilon=1e-5, decay=0.9,
+                                          updates_collections=None)
+        h2 = tf.nn.relu(h2)
 
-        # h3 = self.g_h3(h0)
+        h3 = self.g_h3(h2)
+        h3 = tf.contrib.layers.batch_norm(h3, is_training=is_train,
+                                          epsilon=1e-5, decay=0.9,
+                                          updates_collections=None)
+        h3 = tf.nn.relu(h3)
 
-        h3 = tf.depth_to_space(h0, 2)
-        h3 = self.g_conv1(h3)
-        h3 = tf.nn.elu(self.g_norm3(h3))
-        # return self.g_h4(h3)
-        return self.g_conv2(tf.depth_to_space(h3, 2))
+        h4 = self.g_h4(h3)
+        h4 = tf.contrib.layers.batch_norm(h4, is_training=is_train,
+                                          epsilon=1e-5, decay=0.9,
+                                          updates_collections=None)
+        h4 = tf.nn.relu(h4)
+        return h4
 
 
-# DISCRIMINATOR IMPLEMENTATION based on :
-#    https://github.com/carpedm20/DCGAN-tensorflow/blob/master/model.py
 class Discriminator(tf.keras.Model):
     def __init__(self, options):
         super().__init__()
         self.options = options
+        self.c2, self.c4, self.c8, self.c16 = 64, 128, 256, 512
 
-        self.d_h0_conv = tf.keras.layers.Conv2D(options['df_dim'],
+        self.d_h0_conv = tf.keras.layers.Conv2D(self.c2,
+            kernel_initializer=tf.truncated_normal_initializer(stddev=0.02),
             kernel_size=5, strides=2, padding="same")
-        self.d_h1_conv = tf.keras.layers.Conv2D(options['df_dim']*2,
+        self.d_h1_conv = tf.keras.layers.Conv2D(self.c4,
+            kernel_initializer=tf.truncated_normal_initializer(stddev=0.02),
             kernel_size=5, strides=2, padding="same")
-        self.d_h2_conv = tf.keras.layers.Conv2D(options['df_dim']*4,
+        self.d_h2_conv = tf.keras.layers.Conv2D(self.c8,
+            kernel_initializer=tf.truncated_normal_initializer(stddev=0.02),
             kernel_size=5, strides=2, padding="same")
-        self.d_h3_conv = tf.keras.layers.Conv2D(options['df_dim']*8,
+        self.d_h3_conv = tf.keras.layers.Conv2D(self.c16,
+            kernel_initializer=tf.truncated_normal_initializer(stddev=0.02),
             kernel_size=5, strides=2, padding="same")
-        # self.d_h3_conv_new = tf.keras.layers.Conv2D(options['df_dim']*8,
-        #     kernel_size=1, strides=1, padding="same")
 
         # self.bi_rnn = BiRNN(options['rnn_output_dim'], options['embedded_size'],
         #                     options['rnn_hidden'], options['voc_dim'],
@@ -168,53 +169,38 @@ class Discriminator(tf.keras.Model):
                        options['embedding_matrix'])
 
         self.flatten = tf.keras.layers.Flatten()
-        self.d_fc1 = tf.keras.layers.Dense(1024)
-        self.d_fc2 = tf.keras.layers.Dense(1)
+        self.d_fc = tf.keras.layers.Dense(1)
 
-        # self.d_norm1 = tf.keras.layers.BatchNormalization()
-        # self.d_norm2 = tf.keras.layers.BatchNormalization()
-        # self.d_norm3 = tf.keras.layers.BatchNormalization()
-        # self.d_norm4 = tf.keras.layers.BatchNormalization()
-
-        self.d_norm1 = InstanceNormalization()
-        self.d_norm2 = InstanceNormalization()
-        self.d_norm3 = InstanceNormalization()
-        self.d_norm4 = InstanceNormalization()
-
-    def _global_average_pooling(self, x):
-        for _ in range(2):
-            x = tf.reduce_mean(x, axis=1)
-        return x
-
-    def _add_noise(self, h, sigma=0.2, training=True):
-        if training:
-            return h + sigma * tf.random_normal(h.shape)
-        else:
-            return h
-
-    def __call__(self, image, t_text_embedding, training=True):
+    def __call__(self, image, t_text_embedding, is_train=True):
         n_batch, _, _, _ = image.shape
 
-        h = self._add_noise(image)
-        h0 = tf.nn.elu(self._add_noise(self.d_h0_conv(h)))  # 32
-        h1 = tf.nn.elu(
-            self._add_noise(self.d_norm1(self.d_h1_conv(h0))))  # 16
-        h2 = tf.nn.elu(
-            self._add_noise(self.d_norm2(self.d_h2_conv(h1))))  # 8
-        h3 = tf.nn.elu(
-            self._add_noise(self.d_norm3(self.d_h3_conv(h2))))  # 4
+        h1 = self.d_h0_conv(image)  # 32
+        h1 = tf.contrib.layers.batch_norm(h1, is_training=is_train,
+                                          epsilon=1e-5, decay=0.9,
+                                          updates_collections=None)
+        h1 = tf.nn.leaky_relu(h1)
 
-        # h3_pooled = self._global_average_pooling(h3)
-        h3_flatten = self.flatten(h3)
+        h2 = self.d_h1_conv(h1)  # 16
+        h2 = tf.contrib.layers.batch_norm(h2, is_training=is_train,
+                                          epsilon=1e-5, decay=0.9,
+                                          updates_collections=None)
+        h2 = tf.nn.leaky_relu(h2)
+
+        h3 = self.d_h2_conv(h2)  # 8
+        h3 = tf.contrib.layers.batch_norm(h3, is_training=is_train,
+                                          epsilon=1e-5, decay=0.9,
+                                          updates_collections=None)
+        h3 = tf.nn.leaky_relu(h3)
+
+        h4 = self.d_h3_conv(h3)  # 4
+        h4 = tf.contrib.layers.batch_norm(h4, is_training=is_train,
+                                          epsilon=1e-5, decay=0.9,
+                                          updates_collections=None)
+        h4 = tf.nn.leaky_relu(h4)
+
+        h4_flatten = self.flatten(h4)
 
         # reduced_text_embeddings = self.rnn(t_text_embedding)
         # h3_concat = tf.concat([h3_flatten, reduced_text_embeddings], 1)
-        # hf1 = tf.nn.leaky_relu(self.d_norm4(self.d_fc1(h3_concat)))
 
-        # hf1 = tf.nn.elu(
-        #     self._add_noise(self.d_norm4(self.d_fc1(h3_flatten))))
-        hf1 = tf.nn.elu(
-            self._add_noise(self.d_norm4(self.d_fc1(h3_flatten))))
-        hf2 = self.d_fc2(hf1)
-
-        return hf2
+        return self.d_fc(h4_flatten)
