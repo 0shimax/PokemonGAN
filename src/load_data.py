@@ -52,7 +52,7 @@ class DataSet(tf.data.Dataset):
         assert images.shape[3] == 3
         images = images.astype(numpy.float32)
         # images = ((images / 255.) - 0.5) * 2
-        images /= 255.
+        # images /= 255.
 
         self._images = images
         self._captions = captions
@@ -115,8 +115,8 @@ class DataSet(tf.data.Dataset):
 
         real_images = argment_images(real_images)
 
-        return (real_images,
-                tf.convert_to_tensor(wrong_images),
+        return (real_images / 255,
+                tf.convert_to_tensor(wrong_images) / 255.,
                 tf.convert_to_tensor(captions))
 
 

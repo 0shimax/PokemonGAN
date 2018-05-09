@@ -140,8 +140,8 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
                 generated_images = generator(noise, captions)
                 tf.contrib.summary.image(
                     'generated_images',
-                    # (generated_images / 2. + 0.5) * 255,
-                    generated_images * 255,
+                    (generated_images / 2. + 0.5) * 255,
+                    # generated_images * 255,
                     max_images=300)
 
                 discriminator_real_outputs =\
@@ -175,10 +175,11 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
                 zip(discriminator_grad, discriminator.variables))
 
             discriminator.discriminator_variables = discriminator.variables
-            tf.contrib.gan.features.clip_discriminator_weights(
-                discriminator_optimizer,
-                discriminator,
-                0.01)
+            discriminator_optimizer = \
+                tf.contrib.gan.features.clip_discriminator_weights(
+                    discriminator_optimizer,
+                    discriminator,
+                    0.01)
 
             if log_interval and batch_index > 0 \
                     and batch_index % log_interval == 0:

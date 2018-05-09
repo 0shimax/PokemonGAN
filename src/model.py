@@ -137,7 +137,7 @@ class Generator(tf.keras.Model):
         h4 = tf.contrib.layers.batch_norm(h4, is_training=is_train,
                                           epsilon=1e-5, decay=0.9,
                                           updates_collections=None)
-        h4 = tf.nn.relu(h4)
+        h4 = tf.nn.tanh(h4)
         return h4
 
 
