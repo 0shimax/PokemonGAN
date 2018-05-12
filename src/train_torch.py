@@ -57,7 +57,11 @@ if opt.dataset in ['imagenet', 'folder', 'lfw']:
     dataset = dset.ImageFolder(root=opt.dataroot,
                                transform=transforms.Compose([
                                    transforms.Resize(opt.imageSize),
+                                   transforms.ColorJitter(brightness=0.4,
+                                                          contrast=0.4,
+                                                          saturation=0.4),
                                    # transforms.CenterCrop(opt.imageSize),
+                                   transforms.RandomHorizontalFlip(),
                                    transforms.ToTensor(),
                                    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
                                ]))
@@ -135,7 +139,7 @@ if opt.cuda:
 netG.apply(weights_init)
 if opt.netG != '':
     netG.load_state_dict(torch.load(opt.netG))
-print(netG)
+# print(netG)
 
 
 class Discriminator(nn.Module):
@@ -181,7 +185,7 @@ if opt.cuda:
 netD.apply(weights_init)
 if opt.netD != '':
     netD.load_state_dict(torch.load(opt.netD))
-print(netD)
+# print(netD)
 
 
 def main():
@@ -207,21 +211,22 @@ def main():
             label = torch.ones((batch_size,))
             # label = torch.new_full((batch_size,), real_label)
 
-            output = netD(real_cpu)
-            errD_real = criterion(output, label)
-            errD_real.backward()
-            D_x = output.mean().item()
+            for _ in range(5):
+                output = netD(real_cpu)
+                errD_real = criterion(output, label)
+                errD_real.backward()
+                D_x = output.mean().item()
 
-            # train with fake
-            noise = torch.randn(batch_size, nz, 1, 1)
-            fake = netG(noise)
-            label.fill_(fake_label)
-            output = netD(fake.detach())
-            errD_fake = criterion(output, label)
-            errD_fake.backward()
-            D_G_z1 = output.mean().item()
-            errD = errD_real + errD_fake
-            optimizerD.step()
+                # train with fake
+                noise = torch.randn(batch_size, nz, 1, 1)
+                fake = netG(noise)
+                label.fill_(fake_label)
+                output = netD(fake.detach())
+                errD_fake = criterion(output, label)
+                errD_fake.backward()
+                D_G_z1 = output.mean().item()
+                errD = errD_real + errD_fake
+                optimizerD.step()
 
             ############################
             # (2) Update G network: maximize log(D(G(z)))
@@ -237,7 +242,7 @@ def main():
             print('[%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f D(G(z)): %.4f / %.4f'
                   % (epoch, opt.niter, i, len(dataloader),
                      errD.item(), errG.item(), D_x, D_G_z1, D_G_z2))
-            if i % 100 == 0:
+            if i % 500 == 0:
                 vutils.save_image(real_cpu,
                         '%s/real_samples.png' % opt.outf,
                         normalize=True)
