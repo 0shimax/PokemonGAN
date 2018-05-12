@@ -63,8 +63,10 @@ def main(args):
     model_objects = {
         'generator': model.Generator(model_options),
         'discriminator': model.Discriminator(model_options),
-        'generator_optimizer': tf.train.RMSPropOptimizer(learning_rate=2e-4),
-        'discriminator_optimizer': tf.train.RMSPropOptimizer(learning_rate=2e-4),
+        # 'generator_optimizer': tf.train.RMSPropOptimizer(learning_rate=2e-4),
+        # 'discriminator_optimizer': tf.train.RMSPropOptimizer(learning_rate=2e-4),
+        'generator_optimizer': tf.train.AdamOptimizer(learning_rate=args.learning_rate),
+        'discriminator_optimizer': tf.train.AdamOptimizer(learning_rate=args.learning_rate),
         'step_counter': tf.train.get_or_create_global_step()}
 
     train(args, model_objects, device, dataset)
@@ -174,12 +176,12 @@ def train_one_epoch(generator, discriminator, generator_optimizer,
             discriminator_optimizer.apply_gradients(
                 zip(discriminator_grad, discriminator.variables))
 
-            discriminator.discriminator_variables = discriminator.variables
-            discriminator_optimizer = \
-                tf.contrib.gan.features.clip_discriminator_weights(
-                    discriminator_optimizer,
-                    discriminator,
-                    0.01)
+            # discriminator.discriminator_variables = discriminator.variables
+            # discriminator_optimizer = \
+            #     tf.contrib.gan.features.clip_discriminator_weights(
+            #         discriminator_optimizer,
+            #         discriminator,
+            #         0.01)
 
             if log_interval and batch_index > 0 \
                     and batch_index % log_interval == 0:

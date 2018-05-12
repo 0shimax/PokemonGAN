@@ -115,8 +115,10 @@ class DataSet(tf.data.Dataset):
 
         real_images = argment_images(real_images)
 
-        return (real_images / 255,
-                tf.convert_to_tensor(wrong_images) / 255.,
+        # images = ((images / 255.) - 0.5) * 2
+
+        return (((real_images / 255.) - 0.5) * 2,
+                ((tf.convert_to_tensor(wrong_images) / 255.) - 0.5) * 2,
                 tf.convert_to_tensor(captions))
 
 
