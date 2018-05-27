@@ -5,6 +5,7 @@ import random
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.nn import init
 import torch.nn.functional as F
 import torch.nn.parallel
 import torch.backends.cudnn as cudnn
@@ -96,6 +97,17 @@ def weights_init(m):
         m.bias.data.fill_(0)
 
 
+def init_linear(linear):
+    init.xavier_uniform_(linear.weight)
+    linear.bias.data.zero_()
+
+
+def init_conv(conv, glu=True):
+    init.xavier_uniform_(conv.weight)
+    if conv.bias is not None:
+        conv.bias.data.zero_()
+
+
 class SpectralNorm:
     def __init__(self, name):
         self.name = name
@@ -144,115 +156,194 @@ def spectral_norm(module, name='weight'):
     return module
 
 
+class UpsampleConvBlock(nn.Module):
+    def __init__(self, in_channel, out_channel, kernel_size,
+                 n_class=None,
+                 padding=1, post=True, resize=True,
+                 normalize=True, self_attention=False):
+        super().__init__()
+
+        self.upsample = nn.Upsample(scale_factor=2)
+        conv = nn.Conv2d(in_channel, out_channel, kernel_size,
+                         padding=padding, bias=False)
+        init_conv(conv)
+        self.conv = spectral_norm(conv)
+
+        self.resize = resize
+        self.post = post
+        if self.post:
+            self.bn = nn.BatchNorm2d(out_channel, affine=False)
+
+            self.embed = nn.Embedding(n_class, out_channel * 2)
+            self.embed.weight.data[:, :out_channel] = 1
+            self.embed.weight.data[:, out_channel:] = 0
+
+        self.attention = self_attention
+        if self_attention:
+            self.query = nn.Conv1d(out_channel, out_channel // 8, 1)
+            self.key = nn.Conv1d(out_channel, out_channel // 8, 1)
+            self.value = nn.Conv1d(out_channel, out_channel, 1)
+            self.gamma = nn.Parameter(torch.tensor(0.0))
+
+            init_conv(self.query)
+            init_conv(self.key)
+            init_conv(self.value)
+
+    def forward(self, input, class_id=None):
+        out = input
+        if self.resize:
+            out = self.upsample(input)
+        out = self.conv(out)
+        if self.post:
+            out = self.bn(out)
+            embed = self.embed(class_id)
+            gamma, beta = embed.chunk(2, 1)
+            #print(out.shape, gamma.shape, beta.shape)
+            gamma = gamma.unsqueeze(2).unsqueeze(3)
+            beta = beta.unsqueeze(2).unsqueeze(3)
+            out = gamma * out + beta
+            out = activation(out)
+
+        if self.attention:
+            shape = out.shape
+            flatten = out.view(shape[0], shape[1], -1)
+            query = self.query(flatten).permute(0, 2, 1)
+            key = self.key(flatten)
+            value = self.value(flatten)
+            #print(key.shape, value.shape)
+            query_key = torch.bmm(query, key)
+            attn = F.softmax(query_key, 1)
+            attn = torch.bmm(value, attn)
+            attn = attn.view(*shape)
+            #print(out.shape, attn.shape)
+            out = self.gamma * attn + out
+
+        return out
+
+
+class ConvBlock(nn.Module):
+    def __init__(self, in_channel, out_channel, kernel_size,
+                 stride=1, padding=1, bn=False,
+                 self_attention=False):
+        super().__init__()
+
+        conv = nn.Conv2d(in_channel, out_channel, kernel_size,
+                         stride, padding, bias=False)
+        init_conv(conv)
+        self.conv = spectral_norm(conv)
+        self.use_bn = bn
+        if bn:
+            self.bn = nn.BatchNorm2d(out_channel, affine=True)
+
+        self.attention = self_attention
+        if self_attention:
+            query = nn.Conv1d(out_channel, out_channel // 8, 1)
+            key = nn.Conv1d(out_channel, out_channel // 8, 1)
+            value = nn.Conv1d(out_channel, out_channel, 1)
+            self.gamma = nn.Parameter(torch.tensor(0.0))
+
+            init_conv(query)
+            init_conv(key)
+            init_conv(value)
+
+            self.query = spectral_norm(query)
+            self.key = spectral_norm(key)
+            self.value = spectral_norm(value)
+
+    def forward(self, input):
+        out = self.conv(input)
+        if self.use_bn:
+            out = self.bn(out)
+        out = F.leaky_relu(out, negative_slope=0.2)
+
+        if self.attention:
+            shape = out.shape
+            flatten = out.view(shape[0], shape[1], -1)
+            query = self.query(flatten).permute(0, 2, 1)
+            key = self.key(flatten)
+            value = self.value(flatten)
+            query_key = torch.bmm(query, key)
+            attn = F.softmax(query_key, 1)
+            attn = torch.bmm(value, attn)
+            attn = attn.view(*shape)
+            out = self.gamma * attn + out
+
+        return out
+
+
 class Generator(nn.Module):
-    def __init__(self):
+    def __init__(self, code_dim=100, n_class=None):
         super().__init__()
         self.c4, self.c8, self.c16, self.c32, self.c64 = 512, 256, 128, 64, 32
         self.s4 = 4
 
-        self.g_fc1 = nn.Linear(100, self.s4*self.s4*self.c4)
-        self.g_h1 = nn.ConvTranspose2d(self.c4, self.c8, 5, 2, padding=2)
-        self.g_h2 = nn.ConvTranspose2d(self.c8, self.c16, 5, 2, padding=1)
-        self.g_h3 = nn.ConvTranspose2d(self.c16, self.c32, 5, 2, padding=1)
-        self.g_h4 = nn.ConvTranspose2d(self.c32, 3, 4, 2, padding=0)
-
-        self.bn0 = nn.BatchNorm2d(self.c4)
-        self.bn1 = nn.BatchNorm2d(self.c8)
-        self.bn2 = nn.BatchNorm2d(self.c16)
-        self.bn3 = nn.BatchNorm2d(self.c32)
-        self.bn4 = nn.BatchNorm2d(3)
+        self.lin_code = nn.Linear(code_dim, self.s4*self.s4*self.c4)
+        self.conv1 = UpsampleConvBlock(self.c4, self.c8, 3, post=False)
+        self.conv2 = UpsampleConvBlock(self.c8, self.c8, 3,
+                                       self_attention=True, post=False)
+        self.conv3 = UpsampleConvBlock(self.c8, self.c16, 3, post=False)
+        self.conv4 = UpsampleConvBlock(self.c16, self.c32, 3, post=False)
+        self.conv5 = UpsampleConvBlock(self.c32, 3, 3, 1,
+                                       resize=False, post=False)
+        init_linear(self.lin_code)
 
     def forward(self, input):
-        h_z = self.g_fc1(input)
-        h0 = h_z.view(-1, self.c4, self.s4, self.s4)
-        h0 = F.relu(self.bn0(h0))
+        out = F.relu(self.lin_code(input))
+        out = out.view(-1, self.c4, self.s4, self.s4)
+        out = self.conv1(out)
+        out = self.conv2(out)
+        out = self.conv3(out)
+        out = self.conv4(out)
+        out = self.conv5(out)
 
-        h1 = self.g_h1(h0)
-        h1 = F.relu(self.bn1(h1))
-
-        h2 = self.g_h2(h1)
-        h2 = F.relu(self.bn2(h2))
-
-        h3 = self.g_h3(h2)
-        h3 = F.relu(self.bn3(h3))
-
-        h4 = self.g_h4(h3)
-
-        h4 = F.tanh(self.bn4(h4))
-        return h4
+        return F.tanh(out)
 
 
 netG = Generator()
 if opt.cuda:
     netG.cuda()
 
-netG.apply(weights_init)
+# netG.apply(weights_init)
 if Path(opt.netG).exists():
     netG.load_state_dict(torch.load(opt.netG))
 # print(netG)
 
 
 class Discriminator(nn.Module):
-    def __init__(self):
+    def __init__(self, n_class=18):
         super().__init__()
         self.c2, self.c4, self.c8, self.c16 = 64, 128, 256, 512
 
-        self.d_h0_conv = nn.Conv2d(3, self.c2, 5, 2, padding=0)
-        self.d_h1_conv = nn.Conv2d(self.c2, self.c4, 5, 2, padding=0)
-        self.d_h2_conv = nn.Conv2d(self.c4, self.c8, 5, 2, padding=0)
-        self.d_h3_conv = nn.Conv2d(self.c8, self.c16, 5, 2, padding=0)
-        self.d_fc = nn.Linear(self.c16, 1)
+        self.conv = nn.Sequential(ConvBlock(3, self.c2, 3, 2),
+                                  ConvBlock(self.c2, self.c4, 3, 2),
+                                  ConvBlock(self.c4, self.c8, 3, 2),
+                                  ConvBlock(self.c8, self.c16, 3, 2),
+                                  ConvBlock(self.c16, self.c16, 3,
+                                            self_attention=True))
+        linear = nn.Linear(512, 1)
+        init_linear(linear)
+        self.linear = spectral_norm(linear)
 
-        self.bn0 = nn.BatchNorm2d(self.c2)
-        self.bn1 = nn.BatchNorm2d(self.c4)
-        self.bn2 = nn.BatchNorm2d(self.c8)
-        self.bn3 = nn.BatchNorm2d(self.c16)
+        embed = nn.Embedding(n_class, 512)
+        embed.weight.data.uniform_(-0.1, 0.1)
+        self.embed = spectral_norm(embed)
 
     def forward(self, input):
-        n_batch = input.shape[0]
-
-        h0 = self.d_h0_conv(input)  # 32
-        h0 = F.leaky_relu(self.bn0(h0))
-
-        h1 = self.d_h1_conv(h0)  # 16
-        h1 = F.leaky_relu(self.bn1(h1))
-
-        h2 = self.d_h2_conv(h1)  # 8
-        h2 = F.leaky_relu(self.bn2(h2))
-
-        h3 = self.d_h3_conv(h2)  # 4
-        h3 = F.leaky_relu(self.bn3(h3))
-
-        h3_flatten = h3.view(n_batch, -1)
-        # out = F.sigmoid(self.d_fc(h3_flatten).squeeze(1))
-        return self.d_fc(h3_flatten).squeeze(1)
+        out = self.conv(input)
+        out = out.view(out.size(0), out.size(1), -1)
+        out = out.sum(2)
+        out_linear = self.linear(out).squeeze()
+        return out_linear
 
 
 netD = Discriminator()
 if opt.cuda:
     netD.cuda()
 
-netD.apply(weights_init)
+# netD.apply(weights_init)
 if Path(opt.netD).exists():
     netD.load_state_dict(torch.load(opt.netD))
 # print(netD)
-
-
-def compute_gradient_penalty(D, real_samples, fake_samples):
-    """Calculates the gradient penalty loss for WGAN GP"""
-    # Random weight term for interpolation between real and fake samples
-    alpha = torch.FloatTensor(np.random.random((real_samples.shape[0], 1, 1, 1)))
-    # Get random interpolation between real and fake samples
-    interpolates = (alpha * real_samples + ((1 - alpha) * fake_samples)).requires_grad_(True)
-    d_interpolates = D(interpolates)
-    fake = torch.FloatTensor(real_samples.shape[0]).fill_(1.0).requires_grad_(False)
-    # Get gradient w.r.t. interpolates
-    # Gradient of d_interpolates over interpolates
-    gradients = torch.autograd.grad(outputs=d_interpolates, inputs=interpolates,
-                                    grad_outputs=fake, create_graph=True, retain_graph=True,
-                                    only_inputs=True)[0]
-    gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
-    return gradient_penalty
 
 
 def requires_grad(model, flag=True):
@@ -261,14 +352,11 @@ def requires_grad(model, flag=True):
 
 
 def main():
-    # fixed_noise = torch.randn(opt.batchSize, nz)  # .clamp_(-1., 1.).detach()
     fixed_noise = torch.FloatTensor(opt.batchSize, nz).uniform_(-1, 1)
 
     # setup optimizer
-    optimizerG = optim.Adam(netG.parameters(), lr=0.0002, betas=(0.5, 0.999))
-    optimizerD = optim.Adam(netD.parameters(), lr=0.0002, betas=(0.5, 0.999))
-    # optimizerG = optim.RMSprop(netG.parameters(), lr=5e-5, weight_decay=0.0001)
-    # optimizerD = optim.RMSprop(netD.parameters(), lr=5e-5, weight_decay=0.0001)
+    optimizerG = optim.Adam(netG.parameters(), lr=1e-4, betas=(0, 0.9))
+    optimizerD = optim.Adam(netD.parameters(), lr=1e-4, betas=(0, 0.9))
 
     requires_grad(netG, False)
     requires_grad(netD, True)
@@ -283,23 +371,18 @@ def main():
             optimizerD.zero_grad()
 
             # train with fake
-            # noise = torch.randn(opt.batchSize, nz)  # .clamp_(-1., 1.).detach()
             noise = torch.FloatTensor(real_images.shape[0], nz).uniform_(-1, 1)
             fake = netG(noise).detach()
 
             real_validity = netD(real_images)
             fake_validity = netD(fake)
 
-            # Gradient penalty
-            gradient_penalty = compute_gradient_penalty(netD, real_images.data, fake.data)
-            # Adversarial loss
-            loss_D = -torch.mean(real_validity) + torch.mean(fake_validity) + lambda_gp * gradient_penalty
+            loss_D = F.relu(1 + fake_validity).mean()
+            loss_D += F.relu(1 - real_validity).mean()
+            disc_loss_val = loss_D.detach().item()
 
             loss_D.backward()
             optimizerD.step()
-
-            # for p in netD.parameters():
-            #     p.data.clamp_(-opt.clip_value, opt.clip_value)
 
             if i % opt.n_critic == 0:
                 ############################
@@ -311,7 +394,8 @@ def main():
 
                 fake = netG(fixed_noise)
                 # Adversarial loss
-                loss_G = -torch.mean(netD(fake))
+                loss_G = -netD(fake).mean()
+                gen_loss_val = loss_G.detach().item()
                 loss_G.backward()
                 optimizerG.step()
 
@@ -320,7 +404,7 @@ def main():
 
                 print('[%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f'
                       % (epoch, opt.niter, i, len(dataloader),
-                         loss_D.item(), loss_G.item()))
+                         disc_loss_val, gen_loss_val))
 
             if i % 500 == 0:
                 vutils.save_image(real_images,
