@@ -372,7 +372,7 @@ def main():
 
             # train with fake
             noise = torch.randn(real_images.shape[0], nz)
-            fake = netG(noise).detach()
+            fake = netG(noise)
 
             real_validity = netD(real_images)
             fake_validity = netD(fake)
