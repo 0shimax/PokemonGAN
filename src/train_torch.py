@@ -2,6 +2,7 @@ import argparse
 import os
 from pathlib import Path
 import random
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -23,13 +24,13 @@ parser.add_argument('--imageSize', type=int, default=64, help='the height / widt
 parser.add_argument('--nz', type=int, default=100, help='size of the latent z vector')
 parser.add_argument('--ngf', type=int, default=64)
 parser.add_argument('--ndf', type=int, default=64)
-parser.add_argument('--niter', type=int, default=1000, help='number of epochs to train for')
+parser.add_argument('--niter', type=int, default=5000, help='number of epochs to train for')
 parser.add_argument('--lr', type=float, default=0.0002, help='learning rate, default=0.0002')
 parser.add_argument('--beta1', type=float, default=0.5, help='beta1 for adam. default=0.5')
 parser.add_argument('--cuda', action='store_true', help='enables cuda')
 parser.add_argument('--ngpu', type=int, default=-1, help='number of GPUs to use')
-parser.add_argument('--netG', default='', help="path to netG (to continue training)")
-parser.add_argument('--netD', default='', help="path to netD (to continue training)")
+parser.add_argument('--netG', default='./results/netG_epoch.pth', help="path to netG (to continue training)")
+parser.add_argument('--netD', default='./results/netD_epoch.pth', help="path to netD (to continue training)")
 parser.add_argument('--outf', default='./results', help='folder to output images and model checkpoints')
 parser.add_argument('--n_critic', type=int, default=5, help='number of training steps for discriminator per iter')
 parser.add_argument('--clip_value', type=float, default=0.01, help='lower and upper clip value for disc. weights')
@@ -82,6 +83,8 @@ ngf = int(opt.ngf)
 ndf = int(opt.ndf)
 nc = 3
 
+# Loss weight for gradient penalty
+lambda_gp = 10
 
 # custom weights initialization called on netG and netD
 def weights_init(m):
@@ -91,6 +94,54 @@ def weights_init(m):
     elif classname.find('BatchNorm') != -1:
         m.weight.data.normal_(1.0, 0.02)
         m.bias.data.fill_(0)
+
+
+class SpectralNorm:
+    def __init__(self, name):
+        self.name = name
+
+    def compute_weight(self, module):
+        weight = getattr(module, self.name + '_orig')
+        u = getattr(module, self.name + '_u')
+        size = weight.size()
+        weight_mat = weight.contiguous().view(size[0], -1)
+        with torch.no_grad():
+            v = weight_mat.t() @ u
+            v = v / v.norm()
+            u = weight_mat @ v
+            u = u / u.norm()
+        sigma = u @ weight_mat @ v
+        weight_sn = weight / sigma
+        # weight_sn = weight_sn.view(*size)
+
+        return weight_sn, u
+
+    @staticmethod
+    def apply(module, name):
+        fn = SpectralNorm(name)
+
+        weight = getattr(module, name)
+        del module._parameters[name]
+        module.register_parameter(name + '_orig', weight)
+        input_size = weight.size(0)
+        u = weight.new_empty(input_size).normal_()
+        module.register_buffer(name, weight)
+        module.register_buffer(name + '_u', u)
+
+        module.register_forward_pre_hook(fn)
+
+        return fn
+
+    def __call__(self, module, input):
+        weight_sn, u = self.compute_weight(module)
+        setattr(module, self.name, weight_sn)
+        setattr(module, self.name + '_u', u)
+
+
+def spectral_norm(module, name='weight'):
+    SpectralNorm.apply(module, name)
+
+    return module
 
 
 class Generator(nn.Module):
@@ -136,7 +187,7 @@ if opt.cuda:
     netG.cuda()
 
 netG.apply(weights_init)
-if opt.netG != '':
+if Path(opt.netG).exists():
     netG.load_state_dict(torch.load(opt.netG))
 # print(netG)
 
@@ -182,9 +233,26 @@ if opt.cuda:
     netD.cuda()
 
 netD.apply(weights_init)
-if opt.netD != '':
+if Path(opt.netD).exists():
     netD.load_state_dict(torch.load(opt.netD))
 # print(netD)
+
+
+def compute_gradient_penalty(D, real_samples, fake_samples):
+    """Calculates the gradient penalty loss for WGAN GP"""
+    # Random weight term for interpolation between real and fake samples
+    alpha = torch.FloatTensor(np.random.random((real_samples.shape[0], 1, 1, 1)))
+    # Get random interpolation between real and fake samples
+    interpolates = (alpha * real_samples + ((1 - alpha) * fake_samples)).requires_grad_(True)
+    d_interpolates = D(interpolates)
+    fake = torch.FloatTensor(real_samples.shape[0]).fill_(1.0).requires_grad_(False)
+    # Get gradient w.r.t. interpolates
+    # Gradient of d_interpolates over interpolates
+    gradients = torch.autograd.grad(outputs=d_interpolates, inputs=interpolates,
+                                    grad_outputs=fake, create_graph=True, retain_graph=True,
+                                    only_inputs=True)[0]
+    gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
+    return gradient_penalty
 
 
 def main():
@@ -192,10 +260,10 @@ def main():
     fixed_noise = torch.FloatTensor(opt.batchSize, nz).uniform_(-1, 1)
 
     # setup optimizer
-    # optimizerD = optim.Adam(netD.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
-    # optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
-    optimizerG = optim.RMSprop(netG.parameters(), lr=5e-5)
-    optimizerD = optim.RMSprop(netD.parameters(), lr=5e-5)
+    optimizerG = optim.Adam(netG.parameters(), lr=0.0002, betas=(0.5, 0.999))
+    optimizerD = optim.Adam(netD.parameters(), lr=0.0002, betas=(0.5, 0.999))
+    # optimizerG = optim.RMSprop(netG.parameters(), lr=5e-5, weight_decay=0.0001)
+    # optimizerD = optim.RMSprop(netD.parameters(), lr=5e-5, weight_decay=0.0001)
 
     for epoch in range(opt.niter):
         for i, data in enumerate(dataloader, 0):
@@ -208,19 +276,22 @@ def main():
 
             # train with fake
             # noise = torch.randn(opt.batchSize, nz)  # .clamp_(-1., 1.).detach()
-            noise = torch.FloatTensor(opt.batchSize, nz).uniform_(-1, 1)
+            noise = torch.FloatTensor(real_images.shape[0], nz).uniform_(-1, 1)
             fake = netG(noise).detach()
+
+            real_validity = netD(real_images)
+            fake_validity = netD(fake)
+
+            # Gradient penalty
+            gradient_penalty = compute_gradient_penalty(netD, real_images.data, fake.data)
             # Adversarial loss
-            # err1 = -torch.mean(netD(real_images))
-            # err2 = torch.mean(netD(fake))
-            # loss_D = err1 + err2
-            # print(err2.item(), err1.item())
-            loss_D = -torch.mean(netD(real_images)) + torch.mean(netD(fake))
+            loss_D = -torch.mean(real_validity) + torch.mean(fake_validity) + lambda_gp * gradient_penalty
+
             loss_D.backward()
             optimizerD.step()
 
-            for p in netD.parameters():
-                p.data.clamp_(-opt.clip_value, opt.clip_value)
+            # for p in netD.parameters():
+            #     p.data.clamp_(-opt.clip_value, opt.clip_value)
 
             if i % opt.n_critic == 0:
                 ############################
