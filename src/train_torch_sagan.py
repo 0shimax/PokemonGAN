@@ -33,7 +33,7 @@ parser.add_argument('--ngpu', type=int, default=-1, help='number of GPUs to use'
 parser.add_argument('--netG', default='./results/netG_epoch.pth', help="path to netG (to continue training)")
 parser.add_argument('--netD', default='./results/netD_epoch.pth', help="path to netD (to continue training)")
 parser.add_argument('--outf', default='./results', help='folder to output images and model checkpoints')
-parser.add_argument('--n_critic', type=int, default=5, help='number of training steps for discriminator per iter')
+parser.add_argument('--n_critic', type=int, default=1, help='number of training steps for discriminator per iter')
 parser.add_argument('--clip_value', type=float, default=0.01, help='lower and upper clip value for disc. weights')
 parser.add_argument('--manualSeed', type=int, help='manual seed')
 
@@ -352,7 +352,7 @@ def requires_grad(model, flag=True):
 
 
 def main():
-    fixed_noise = torch.FloatTensor(opt.batchSize, nz).uniform_(-1, 1)
+    # fixed_noise = torch.FloatTensor(opt.batchSize, nz).uniform_(-1, 1)
 
     # setup optimizer
     optimizerG = optim.Adam(netG.parameters(), lr=1e-4, betas=(0, 0.9))
@@ -371,7 +371,7 @@ def main():
             optimizerD.zero_grad()
 
             # train with fake
-            noise = torch.FloatTensor(real_images.shape[0], nz).uniform_(-1, 1)
+            noise = torch.randn(real_images.shape[0], nz)
             fake = netG(noise).detach()
 
             real_validity = netD(real_images)
@@ -392,7 +392,7 @@ def main():
                 requires_grad(netG, True)
                 requires_grad(netD, False)
 
-                fake = netG(fixed_noise)
+                fake = netG(torch.randn(real_images.shape[0], nz))
                 # Adversarial loss
                 loss_G = -netD(fake).mean()
                 gen_loss_val = loss_G.detach().item()
@@ -406,11 +406,11 @@ def main():
                       % (epoch, opt.niter, i, len(dataloader),
                          disc_loss_val, gen_loss_val))
 
-            if i % 500 == 0:
+            if i % 50 == 0:
                 vutils.save_image(real_images,
                         '%s/real_samples.png' % opt.outf,
                         normalize=True)
-                fake = netG(fixed_noise)
+                fake = netG(torch.randn(opt.batchSize, nz))
                 vutils.save_image(fake.detach(),
                         '%s/fake_samples_epoch.png' % (opt.outf),
                         normalize=True)

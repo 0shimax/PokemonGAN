@@ -262,7 +262,7 @@ def requires_grad(model, flag=True):
 
 def main():
     # fixed_noise = torch.randn(opt.batchSize, nz)  # .clamp_(-1., 1.).detach()
-    fixed_noise = torch.FloatTensor(opt.batchSize, nz).uniform_(-1, 1)
+    # fixed_noise = torch.FloatTensor(opt.batchSize, nz).uniform_(-1, 1)
 
     # setup optimizer
     optimizerG = optim.Adam(netG.parameters(), lr=0.0002, betas=(0.5, 0.999))
@@ -284,7 +284,8 @@ def main():
 
             # train with fake
             # noise = torch.randn(opt.batchSize, nz)  # .clamp_(-1., 1.).detach()
-            noise = torch.FloatTensor(real_images.shape[0], nz).uniform_(-1, 1)
+            # noise = torch.FloatTensor(real_images.shape[0], nz).uniform_(-1, 1)
+            noise = torch.randn(real_images.shape[0], nz)
             fake = netG(noise).detach()
 
             real_validity = netD(real_images)
@@ -309,7 +310,7 @@ def main():
                 requires_grad(netG, True)
                 requires_grad(netD, False)
 
-                fake = netG(fixed_noise)
+                fake = netG(torch.randn(real_images.shape[0], nz))
                 # Adversarial loss
                 loss_G = -torch.mean(netD(fake))
                 loss_G.backward()
@@ -322,11 +323,11 @@ def main():
                       % (epoch, opt.niter, i, len(dataloader),
                          loss_D.item(), loss_G.item()))
 
-            if i % 500 == 0:
+            if i % 50 == 0:
                 vutils.save_image(real_images,
                         '%s/real_samples.png' % opt.outf,
                         normalize=True)
-                fake = netG(fixed_noise)
+                fake = netG(torch.randn(opt.batchSize, nz))
                 vutils.save_image(fake.detach(),
                         '%s/fake_samples_epoch.png' % (opt.outf),
                         normalize=True)
